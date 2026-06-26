@@ -6,21 +6,17 @@ SurfPass helps users know when satellites are visible or contactable from their 
 
 ## Live URL
 
-Pending final Vercel deployment.
+https://surf-pass.vercel.app
 
-Update this section with the deployed Vercel URL before sending the submission to Riivo.
+GitHub repository: https://github.com/darklight-labs/SurfPass
 
 ## Test account
 
-Pending final Supabase test account.
+Email: `reviewer@surfpass.app`
 
-Email: Pending final Supabase test account
+Password: `SurfPassReview!2026`
 
-Password: Pending final Supabase test account
-
-Final credentials are added only after deployment and test account creation. Use a disposable account with no personal data attached.
-
-Update before sending to Riivo. Reviewer data setup is documented in [docs/test-account-setup.md](docs/test-account-setup.md), and the final non-secret validation checklist is in [docs/reviewer-account-validation.md](docs/reviewer-account-validation.md).
+This is a disposable reviewer account with seeded SurfPass data. Reviewer data setup is documented in [docs/test-account-setup.md](docs/test-account-setup.md), and the final non-secret validation checklist is in [docs/reviewer-account-validation.md](docs/reviewer-account-validation.md).
 
 ## APIs used
 

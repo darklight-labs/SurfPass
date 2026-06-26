@@ -4,10 +4,10 @@ Use this as the final pre-send checklist. Do not send the assessment until every
 
 ## Submission Links
 
-- [ ] GitHub repo URL: `PENDING`
-- [ ] Vercel live URL: `PENDING`
-- [ ] Test account email: `PENDING`
-- [ ] Test account password: `PENDING`
+- [x] GitHub repo URL: `https://github.com/darklight-labs/SurfPass`
+- [x] Vercel live URL: `https://surf-pass.vercel.app`
+- [x] Test account email: `reviewer@surfpass.app`
+- [x] Test account password: `SurfPassReview!2026`
 
 ## Platform Configuration
 
