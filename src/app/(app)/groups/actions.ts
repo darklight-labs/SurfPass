@@ -31,11 +31,47 @@ function isDuplicateSubscriptionError(error: { code?: string; message?: string }
   )
 }
 
+function isUniqueConstraintError(error: { code?: string; message?: string }) {
+  return (
+    error.code === "23505" ||
+    error.message?.toLowerCase().includes("duplicate")
+  )
+}
+
+function logCreateGroupError(
+  stage: "auth" | "group" | "member" | "alert_preference",
+  error: unknown,
+  context?: {
+    userId?: string
+    groupId?: string
+  }
+) {
+  console.error("SurfPass group creation failed", {
+    stage,
+    userId: context?.userId,
+    groupId: context?.groupId,
+    error:
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+          ? String(error.message)
+          : String(error),
+  })
+}
+
 export async function createGroupAction(
   _previousState: GroupActionState,
   formData: FormData
 ): Promise<GroupActionState> {
-  const user = await getCurrentUser()
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError) {
+    logCreateGroupError("auth", userError)
+  }
 
   if (!user) {
     return actionError("Sign in to create a group.")
@@ -52,7 +88,6 @@ export async function createGroupAction(
     )
   }
 
-  const supabase = await createServerSupabaseClient()
   const { data: group, error: groupError } = await supabase
     .from("groups")
     .insert({
@@ -64,31 +99,46 @@ export async function createGroupAction(
     .single()
 
   if (groupError) {
-    return actionError(groupError.message)
+    logCreateGroupError("group", groupError, { userId: user.id })
+    return actionError(
+      "Group could not be created. Confirm you are signed in and try again."
+    )
   }
 
-  const { error: memberError } = await supabase.from("group_members").upsert(
-    {
-      group_id: group.id,
-      user_id: user.id,
-      role: "owner",
-    },
-    { onConflict: "group_id,user_id" }
-  )
+  const { error: memberError } = await supabase.from("group_members").insert({
+    group_id: group.id,
+    user_id: user.id,
+    role: "owner",
+  })
 
-  if (memberError) {
-    return actionError(memberError.message)
+  if (memberError && !isUniqueConstraintError(memberError)) {
+    logCreateGroupError("member", memberError, {
+      userId: user.id,
+      groupId: group.id,
+    })
+    return actionError(
+      "Group was created, but owner membership could not be saved."
+    )
   }
 
-  await supabase.from("alert_preferences").upsert(
-    {
-      user_id: user.id,
-      group_id: group.id,
-      email_enabled: true,
-      lead_minutes: 30,
-    },
-    { onConflict: "user_id,group_id" }
-  )
+  const { error: alertPreferenceError } = await supabase
+    .from("alert_preferences")
+    .upsert(
+      {
+        user_id: user.id,
+        group_id: group.id,
+        email_enabled: true,
+        lead_minutes: 30,
+      },
+      { onConflict: "user_id,group_id" }
+    )
+
+  if (alertPreferenceError) {
+    logCreateGroupError("alert_preference", alertPreferenceError, {
+      userId: user.id,
+      groupId: group.id,
+    })
+  }
 
   revalidatePath("/groups")
   revalidatePath("/dashboard")
