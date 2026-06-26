@@ -10,12 +10,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
 import type { SatelliteCatalogueItem } from "@/types/domain"
 
 type SatelliteLookupResponse = {
   satellite?: SatelliteCatalogueItem
   status?: "existing" | "created"
   error?: string
+}
+
+type SatelliteLookupFormProps = {
+  recommendedSatellites?: SatelliteCatalogueItem[]
 }
 
 function parseNoradInput(value: string) {
@@ -34,7 +39,9 @@ function parseNoradInput(value: string) {
   return noradId
 }
 
-export function SatelliteLookupForm() {
+export function SatelliteLookupForm({
+  recommendedSatellites = [],
+}: SatelliteLookupFormProps) {
   const router = useRouter()
   const [noradInput, setNoradInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -88,6 +95,67 @@ export function SatelliteLookupForm() {
 
   return (
     <div className="space-y-4">
+      {recommendedSatellites.length > 0 ? (
+        <div className="rounded-md border border-zinc-200 bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold uppercase text-zinc-500">
+                Quick add / recommended objects
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-zinc-600">
+                Start with the curated objects most useful for visual, weather,
+                and amateur-radio forecasting.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="rounded-md border-zinc-300 bg-white px-2 text-xs font-semibold uppercase text-zinc-600"
+            >
+              Curated
+            </Badge>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendedSatellites.map((item) => {
+              const isSelected = noradInput.trim() === String(item.noradId)
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => {
+                    setNoradInput(String(item.noradId))
+                    setError(null)
+                    setSatellite(null)
+                    setStatus(null)
+                  }}
+                  className={cn(
+                    "rounded-md border p-3 text-left transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2",
+                    isSelected
+                      ? "border-zinc-950 bg-zinc-950 text-white"
+                      : "border-zinc-200 bg-white text-zinc-950 hover:border-zinc-400 hover:bg-zinc-50"
+                  )}
+                >
+                  <span className="block text-sm font-semibold leading-none">
+                    {item.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-2 block text-xs font-medium",
+                      isSelected ? "text-zinc-300" : "text-zinc-500"
+                    )}
+                  >
+                    NORAD {item.noradId}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <form
         onSubmit={handleSubmit}
         className="grid gap-3 rounded-md border border-zinc-200 bg-white p-4 md:grid-cols-[1fr_auto] md:items-end"
@@ -109,7 +177,7 @@ export function SatelliteLookupForm() {
             maxLength={6}
           />
           <p className="text-sm leading-6 text-zinc-600">
-            Use this when a satellite is not in the curated list.
+            Use this when a satellite is not already in the curated list.
           </p>
         </div>
         <Button type="submit" className="rounded-md" disabled={loading}>

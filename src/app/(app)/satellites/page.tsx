@@ -10,10 +10,22 @@ import { getSatelliteCatalogue } from "@/lib/satellites/queries"
 
 export const dynamic = "force-dynamic"
 
+const recommendedNoradOrder = [25544, 20580, 28654, 33591, 43017, 27607]
+
 export default async function SatellitesPage() {
   const { satellites, error } = await getSatelliteCatalogue()
   const curatedCount = satellites.filter((satellite) => satellite.isCurated).length
   const customCount = satellites.length - curatedCount
+  const recommendedSatellites = satellites
+    .filter(
+      (satellite) =>
+        satellite.isCurated && recommendedNoradOrder.includes(satellite.noradId)
+    )
+    .sort(
+      (a, b) =>
+        recommendedNoradOrder.indexOf(a.noradId) -
+        recommendedNoradOrder.indexOf(b.noradId)
+    )
 
   return (
     <div className="space-y-8">
@@ -49,10 +61,10 @@ export default async function SatellitesPage() {
 
       <SectionBlock
         label="Custom lookup"
-        title="Validate satellite by NORAD"
-        description="Custom satellites are accepted only after server-side N2YO TLE validation."
+        title="Advanced NORAD lookup"
+        description="Use this when a satellite is not already in the curated list."
       >
-        <SatelliteLookupForm />
+        <SatelliteLookupForm recommendedSatellites={recommendedSatellites} />
       </SectionBlock>
 
       <SectionBlock
