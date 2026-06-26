@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AppProviders } from "@/components/providers/app-providers";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -16,8 +17,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full font-sans antialiased">
       <body className="min-h-full bg-background text-foreground">
-        {children}
-        <Toaster />
+        <AppProviders>
+          {children}
+          <Toaster />
+        </AppProviders>
       </body>
     </html>
   );
