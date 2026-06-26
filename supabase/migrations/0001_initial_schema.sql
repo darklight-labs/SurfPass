@@ -87,10 +87,23 @@ create table public.pass_predictions (
   magnitude double precision,
   duration_seconds integer check (duration_seconds is null or duration_seconds >= 0),
   score text check (score is null or score in ('excellent', 'good', 'low')),
+  daylight_label text default 'unknown',
+  daylight_context jsonb,
+  daylight_fetched_at timestamptz,
   raw jsonb,
   fetched_at timestamptz not null default now(),
   cache_key text not null unique,
   created_at timestamptz not null default now(),
+  constraint pass_predictions_daylight_label_check check (
+    daylight_label in (
+      'daylight',
+      'night',
+      'civil_twilight',
+      'nautical_twilight',
+      'astronomical_twilight',
+      'unknown'
+    )
+  ),
   check (start_utc <= max_utc and max_utc <= end_utc)
 );
 

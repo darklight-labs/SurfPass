@@ -64,6 +64,8 @@ RSVP is a readiness signal for a specific group/pass, not formal event registrat
 
 Each group member can store one RSVP per pass: going, maybe, or skipping. Updating readiness overwrites the prior row through the unique group, pass, and user constraint.
 
+Group pass cards expose the readiness controls directly so a reviewer can mark going, maybe, or skipping and reload to verify the persisted `pass_rsvps` state.
+
 RSVP is intentionally structured state. Chat, attendee management, and rich discussion threads remain out of MVP scope.
 
 ## Alerting

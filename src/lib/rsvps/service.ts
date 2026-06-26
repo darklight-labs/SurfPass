@@ -85,6 +85,7 @@ export async function upsertRsvpForUser({
       user_id: userId,
       status,
       note: note ?? null,
+      updated_at: new Date().toISOString(),
     },
     { onConflict: "group_id,pass_prediction_id,user_id" }
   )

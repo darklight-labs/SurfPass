@@ -67,6 +67,7 @@
 7. Updated settings copy to describe active manual and scheduled email delivery.
 8. Updated README, assumptions, reviewer flow, and test account setup docs to describe the pending-claim delivery model.
 9. Added `supabase/migrations/0003_group_rls_repair.sql` so the manual hosted Supabase group RLS repair is reproducible on fresh or existing projects.
+10. Added `pass_predictions.daylight_label`, `daylight_context`, and `daylight_fetched_at` to the baseline migration and idempotent daylight migration so fresh databases match the hosted daylight-enrichment patch.
 
 ## Validation Performed
 

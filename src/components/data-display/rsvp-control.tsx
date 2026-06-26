@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -13,7 +14,7 @@ import type { RsvpStatus } from "@/types/domain"
 type RsvpControlProps = {
   groupId: string
   passPredictionId: string
-  currentUserRsvp?: RsvpStatus
+  currentUserRsvp?: RsvpStatus | null
   currentUserNote?: string | null
   className?: string
 }
@@ -31,6 +32,7 @@ export function RsvpControl({
   currentUserNote,
   className,
 }: RsvpControlProps) {
+  const router = useRouter()
   const [state, formAction, isPending] = useActionState(
     upsertRsvpAction,
     initialRsvpActionState
@@ -43,11 +45,12 @@ export function RsvpControl({
 
     if (state.ok) {
       toast.success("RSVP updated.")
+      router.refresh()
       return
     }
 
     toast.error(state.message)
-  }, [state])
+  }, [router, state])
 
   return (
     <form action={formAction} className={cn("space-y-2", className)}>
@@ -68,6 +71,7 @@ export function RsvpControl({
               variant={active ? "default" : "outline"}
               size="sm"
               disabled={isPending}
+              aria-pressed={active}
               className={cn(
                 "rounded-md",
                 active

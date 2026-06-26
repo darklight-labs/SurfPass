@@ -26,7 +26,7 @@ type RsvpCounts = {
   going: number
   maybe: number
   skipping: number
-  currentUserRsvp?: RsvpStatus
+  currentUserRsvp?: RsvpStatus | null
   currentUserNote?: string | null
 }
 
@@ -133,8 +133,11 @@ export function mapPassPredictionToPassCardViewModel(
     rsvpGoingCount: context.rsvpCounts?.going ?? 0,
     rsvpMaybeCount: context.rsvpCounts?.maybe ?? 0,
     rsvpSkippingCount: context.rsvpCounts?.skipping ?? 0,
-    currentUserRsvp: context.rsvpCounts?.currentUserRsvp,
+    currentUserRsvp: context.rsvpCounts?.currentUserRsvp ?? null,
     currentUserNote: context.rsvpCounts?.currentUserNote,
+    rsvpSummary: `${context.rsvpCounts?.going ?? 0} going / ${
+      context.rsvpCounts?.maybe ?? 0
+    } maybe`,
     alertState: derivePassAlertState({
       passType: row.pass_type,
       startUtc: row.start_utc,
@@ -156,6 +159,7 @@ function emptyRsvpCounts(): RsvpCounts {
     going: 0,
     maybe: 0,
     skipping: 0,
+    currentUserRsvp: null,
   }
 }
 

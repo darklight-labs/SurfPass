@@ -50,6 +50,12 @@ const dataLabel: Record<DataState, string> = {
   unavailable: "Missing",
 }
 
+const rsvpStateLabel = {
+  going: "You're going",
+  maybe: "Maybe",
+  skipping: "Skipping",
+} as const
+
 export function PassCard({
   groupId,
   passPredictionId,
@@ -181,6 +187,7 @@ export function PassCard({
           <RsvpSummary
             goingCount={rsvpGoingCount}
             maybeCount={rsvpMaybeCount}
+            skippingCount={rsvpSkippingCount}
             currentUserRsvp={currentUserRsvp}
           />
         </div>
@@ -193,12 +200,19 @@ export function PassCard({
               <p className="text-xs font-semibold uppercase text-zinc-500">
                 Group readiness
               </p>
-              {rsvpSkippingCount ? (
-                <span className="text-xs text-zinc-500">
-                  {rsvpSkippingCount} skipping
-                </span>
-              ) : null}
+              <span className="text-xs font-medium text-zinc-600">
+                {currentUserRsvp
+                  ? rsvpStateLabel[currentUserRsvp]
+                  : "No RSVP yet"}
+              </span>
             </div>
+            <RsvpSummary
+              goingCount={rsvpGoingCount}
+              maybeCount={rsvpMaybeCount}
+              skippingCount={rsvpSkippingCount}
+              currentUserRsvp={currentUserRsvp}
+              className="mb-3"
+            />
             <RsvpControl
               groupId={groupId}
               passPredictionId={passPredictionId}

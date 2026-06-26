@@ -79,8 +79,9 @@ export type PassCardViewModel = {
   rsvpGoingCount: number
   rsvpMaybeCount: number
   rsvpSkippingCount?: number
-  currentUserRsvp?: RsvpStatus
+  currentUserRsvp?: RsvpStatus | null
   currentUserNote?: string | null
+  rsvpSummary?: string
   alertState: AlertState
   dataState: DataState
   fetchedAt?: string
