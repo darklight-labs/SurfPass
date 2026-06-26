@@ -132,7 +132,7 @@ export function mapPassPredictionToPassCardViewModel(
     durationSeconds,
     magnitude: row.magnitude,
     score,
-    daylightLabel: row.daylight_label,
+    daylightLabel: row.daylight_label ?? "unknown",
     rsvpGoingCount: context.rsvpCounts?.going ?? 0,
     rsvpMaybeCount: context.rsvpCounts?.maybe ?? 0,
     rsvpSkippingCount: context.rsvpCounts?.skipping ?? 0,
@@ -287,36 +287,50 @@ export async function getGroupPassFeed(
     const subscriptionPassTypes = [
       ...new Set(subscriptions.map((subscription) => subscription.pass_type)),
     ]
-    const { data: matchingPassRows, error: passRowsError } = await supabase
-      .from("pass_predictions")
-      .select(
-        "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at"
-      )
-      .in("satellite_id", subscriptionSatelliteIds)
-      .in("location_id", subscriptionLocationIds)
-      .in("pass_type", subscriptionPassTypes)
-      .gte("start_utc", passStartLowerBound)
-      .order("start_utc", { ascending: true })
-      .limit(50)
+    const predictionRows: PassPredictionRow[] = []
 
-    if (passRowsError) {
-      return {
-        passes: [],
-        hasStale: false,
-        warnings,
-        error: passRowsError.message,
+    for (const subscription of subscriptions) {
+      const { data: subscriptionPassRows, error: passRowsError } = await supabase
+        .from("pass_predictions")
+        .select(
+          "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at"
+        )
+        .eq("satellite_id", subscription.satellite_id)
+        .eq("location_id", subscription.location_id)
+        .eq("pass_type", subscription.pass_type)
+        .gte("start_utc", passStartLowerBound)
+        .order("start_utc", { ascending: true })
+
+      if (passRowsError) {
+        return {
+          passes: [],
+          hasStale: false,
+          warnings,
+          error: passRowsError.message,
+        }
       }
-    }
 
-    const predictionRows = (matchingPassRows ?? []).filter((row) =>
-      subscriptionMap.has(predictionKey(row))
-    )
+      predictionRows.push(...(subscriptionPassRows ?? []))
+    }
 
     console.info("[SurfPass feed]", {
       groupId,
       subscriptionCount: subscriptions.length,
       passRowsReturned: predictionRows.length,
     })
+
+    if (predictionRows.length === 0) {
+      console.info("[SurfPass feed]", {
+        groupId,
+        subscriptionCount: subscriptions.length,
+        passRowsReturned: 0,
+        startLowerBound: passStartLowerBound,
+        subscriptionIds: subscriptions.map((subscription) => subscription.id),
+        satelliteIds: subscriptionSatelliteIds,
+        locationIds: subscriptionLocationIds,
+        passTypes: subscriptionPassTypes,
+      })
+    }
 
     const uniquePredictions = Array.from(
       new Map(predictionRows.map((row) => [row.cache_key, row])).values()
@@ -396,7 +410,7 @@ export async function getGroupPassFeed(
         alertDeliveryExists: deliverySet.has(`${groupId}:${row.id}`),
         minElevation: subscription?.min_elevation,
         minVisibilitySeconds: subscription?.min_visibility_seconds,
-        rsvpCounts: rsvpCounts.get(row.id),
+        rsvpCounts: rsvpCounts.get(row.id) ?? emptyRsvpCounts(),
       })
     })
     const hasStale = passes.some((pass) => pass.dataState === "stale")
