@@ -24,6 +24,7 @@ type GroupSubscriptionRow =
 type LocationRow = Database["public"]["Tables"]["locations"]["Row"]
 type SatelliteRow = Database["public"]["Tables"]["satellites"]["Row"]
 type DaylightLookupCache = Map<string, Promise<SunEvents>>
+const PASS_START_GRACE_MINUTES = 5
 
 export type RefreshPassWarningReason =
   | "provider_returned_no_passes"
@@ -72,6 +73,7 @@ export type RefreshPassesSummary = {
   subscriptionsChecked: number
   providerFetches: number
   cacheHits: number
+  passesNormalised: number
   passesUpserted: number
   warnings: RefreshPassWarning[]
 }
@@ -79,6 +81,7 @@ export type RefreshPassesSummary = {
 type SubscriptionRefreshSummary = {
   providerFetches: number
   cacheHits: number
+  passesNormalised: number
   passesUpserted: number
   warnings: RefreshPassWarning[]
   infrastructureFailures: RefreshFailureRecord[]
@@ -139,6 +142,7 @@ function emptySummary(groupId: string): RefreshPassesSummary {
     subscriptionsChecked: 0,
     providerFetches: 0,
     cacheHits: 0,
+    passesNormalised: 0,
     passesUpserted: 0,
     warnings: [],
   }
@@ -216,6 +220,17 @@ export function isCacheFresh(fetchedAt: string | Date, freshnessHours = 6) {
   return Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= freshnessHours * 60 * 60 * 1000
 }
 
+export function getPassPredictionStartLowerBound(
+  now = new Date(),
+  graceMinutes = PASS_START_GRACE_MINUTES
+) {
+  return new Date(now.getTime() - graceMinutes * 60 * 1000).toISOString()
+}
+
+function hasFreshCachedPassRows(rows: PassPredictionRow[]) {
+  return rows.length > 0 && rows.some((row) => isCacheFresh(row.fetched_at))
+}
+
 export async function getCachedPassesForSubscription(
   client: AdminClient,
   subscription: RefreshableSubscription
@@ -228,7 +243,7 @@ export async function getCachedPassesForSubscription(
     .eq("satellite_id", subscription.satellite.id)
     .eq("location_id", subscription.location.id)
     .eq("pass_type", subscription.passType)
-    .gte("end_utc", new Date().toISOString())
+    .gte("start_utc", getPassPredictionStartLowerBound())
     .order("start_utc", { ascending: true })
     .limit(20)
 
@@ -278,11 +293,17 @@ export async function upsertPassPredictions(
       cache_key: pass.cacheKey,
     }))
 
-  const { error } = await client
+  const { data, error } = await client
     .from("pass_predictions")
     .upsert(rows, { onConflict: "cache_key" })
+    .select("id")
 
   if (error) {
+    console.error("[SurfPass refresh]", {
+      step: "upsert_failed",
+      error: safeErrorDetails(error),
+    })
+
     throw createRefreshError(
       "cache_write_failed",
       "Pass predictions could not be written to the cache after N2YO returned data.",
@@ -290,7 +311,27 @@ export async function upsertPassPredictions(
     )
   }
 
-  return rows.length
+  const storedCount = data?.length ?? 0
+
+  if (storedCount === 0) {
+    const details = {
+      attemptedRows: rows.length,
+      message: "Supabase upsert completed without returning stored rows.",
+    }
+
+    console.error("[SurfPass refresh]", {
+      step: "upsert_failed",
+      error: details,
+    })
+
+    throw createRefreshError(
+      "cache_write_failed",
+      "Passes were fetched but no pass prediction rows were stored.",
+      details
+    )
+  }
+
+  return storedCount
 }
 
 async function logProviderFetch(
@@ -484,6 +525,7 @@ export async function refreshPassesForSubscription(
   const summary: SubscriptionRefreshSummary = {
     providerFetches: 0,
     cacheHits: 0,
+    passesNormalised: 0,
     passesUpserted: 0,
     warnings: [],
     infrastructureFailures: [],
@@ -505,14 +547,28 @@ export async function refreshPassesForSubscription(
     )
   }
 
-  const latestCached = cached[0]
+  const cacheIsFresh = hasFreshCachedPassRows(cached)
 
-  if (latestCached && isCacheFresh(latestCached.fetched_at)) {
+  console.info("[SurfPass refresh]", {
+    step: "cache_check",
+    satelliteName: subscription.satellite.name,
+    noradId: subscription.satellite.noradId,
+    passType: subscription.passType,
+    cachedCount: cached.length,
+    isFresh: cacheIsFresh,
+  })
+
+  if (cacheIsFresh) {
     summary.cacheHits += 1
     return summary
   }
 
   summary.providerFetches += 1
+  console.info("[SurfPass refresh]", {
+    step: "cache_miss_provider_fetch",
+    satelliteName: subscription.satellite.name,
+    passType: subscription.passType,
+  })
   console.info("[SurfPass refresh]", {
     step: "provider_fetch_start",
     satelliteName: subscription.satellite.name,
@@ -652,14 +708,23 @@ export async function refreshPassesForSubscription(
         groupId: subscription.groupId,
         subscriptionId: subscription.id,
         satelliteId: subscription.satellite.id,
-          satelliteName: subscription.satellite.name,
-          locationId: subscription.location.id,
-          passType: subscription.passType,
-        } as Json,
+        satelliteName: subscription.satellite.name,
+        locationId: subscription.location.id,
+        passType: subscription.passType,
+      } as Json,
     })
 
     return summary
   }
+
+  summary.passesNormalised += passes.length
+  console.info("[SurfPass refresh]", {
+    step: "normalised",
+    satelliteName: subscription.satellite.name,
+    noradId: subscription.satellite.noradId,
+    passType: subscription.passType,
+    count: passes.length,
+  })
 
   if (passes.length === 0) {
     addWarning(summary, noPassWarning(subscription))
@@ -674,9 +739,10 @@ export async function refreshPassesForSubscription(
         satelliteId: subscription.satellite.id,
         satelliteName: subscription.satellite.name,
         locationId: subscription.location.id,
-          passType: subscription.passType,
-          passesReturned: 0,
-        } as Json,
+        passType: subscription.passType,
+        passesReturned: 0,
+        passesNormalised: 0,
+      } as Json,
     })
 
     return summary
@@ -721,7 +787,7 @@ export async function refreshPassesForSubscription(
   )
   summary.passesUpserted += passesUpserted
   console.info("[SurfPass refresh]", {
-    step: "cache_upsert_done",
+    step: "upsert_done",
     satelliteName: subscription.satellite.name,
     noradId: subscription.satellite.noradId,
     passType: subscription.passType,
@@ -741,6 +807,7 @@ export async function refreshPassesForSubscription(
       locationId: subscription.location.id,
       passType: subscription.passType,
       passesReturned: passes.length,
+      passesNormalised: passes.length,
       passesUpserted,
     } as Json,
   })
@@ -900,6 +967,7 @@ export async function refreshPassesForGroup(
     )
     summary.providerFetches += result.providerFetches
     summary.cacheHits += result.cacheHits
+    summary.passesNormalised += result.passesNormalised
     summary.passesUpserted += result.passesUpserted
     infrastructureFailures.push(...result.infrastructureFailures)
     result.warnings.forEach((warning) => addWarning(summary, warning))
@@ -922,6 +990,7 @@ export async function refreshPassesForGroup(
         subscriptionsChecked: summary.subscriptionsChecked,
         providerFetches: summary.providerFetches,
         cacheHits: summary.cacheHits,
+        passesNormalised: summary.passesNormalised,
         passesUpserted: summary.passesUpserted,
         warnings: summary.warnings,
       }

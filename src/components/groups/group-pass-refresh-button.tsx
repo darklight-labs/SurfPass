@@ -27,6 +27,7 @@ type RefreshPassesSummary = {
   subscriptionsChecked?: number
   providerFetches?: number
   cacheHits?: number
+  passesNormalised?: number
   passesUpserted?: number
   warnings?: RefreshPassWarning[]
 }
@@ -39,6 +40,7 @@ type RefreshPassFailure = {
   subscriptionsChecked?: number
   providerFetches?: number
   cacheHits?: number
+  passesNormalised?: number
   passesUpserted?: number
   warnings?: RefreshPassWarning[]
 }
@@ -187,6 +189,7 @@ export function GroupPassRefreshButton({
               {summary.subscriptionsChecked ?? 0} subscriptions checked,{" "}
               {summary.cacheHits ?? 0} cache hits,{" "}
               {summary.providerFetches ?? 0} provider fetches,{" "}
+              {summary.passesNormalised ?? 0} passes normalised,{" "}
               {summary.passesUpserted ?? 0} passes stored.
             </span>
             <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">

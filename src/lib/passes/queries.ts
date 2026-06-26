@@ -3,7 +3,10 @@ import "server-only"
 import { derivePassAlertState } from "@/lib/alerts/state"
 import { EnvValidationError } from "@/lib/env"
 import { requireUser } from "@/lib/auth/guards"
-import { isCacheFresh } from "@/lib/passes/cache"
+import {
+  getPassPredictionStartLowerBound,
+  isCacheFresh,
+} from "@/lib/passes/cache"
 import { scorePass } from "@/lib/passes/scoring"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { formatLocalPassTime } from "@/lib/utils/dates"
@@ -247,6 +250,12 @@ export async function getGroupPassFeed(
     }
 
     if (!subscriptions || subscriptions.length === 0) {
+      console.info("[SurfPass feed]", {
+        groupId,
+        subscriptionCount: 0,
+        passRowsReturned: 0,
+      })
+
       return { passes: [], hasStale: false, warnings: [] }
     }
 
@@ -265,22 +274,50 @@ export async function getGroupPassFeed(
     }
 
     const alertSettings = getAlertPreferenceDefaults(alertPreference)
-    const passResults = await Promise.all(
-      subscriptions.map((subscription) =>
-        supabase
-        .from("pass_predictions")
-        .select(
-          "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at"
-        )
-          .eq("satellite_id", subscription.satellite_id)
-          .eq("location_id", subscription.location_id)
-          .eq("pass_type", subscription.pass_type)
-          .gte("end_utc", new Date().toISOString())
-          .order("start_utc", { ascending: true })
-          .limit(10)
-      )
+    const passStartLowerBound = getPassPredictionStartLowerBound()
+    const subscriptionMap = new Map(
+      subscriptions.map((subscription) => [subscriptionKey(subscription), subscription])
     )
-    const predictionRows = passResults.flatMap((result) => result.data ?? [])
+    const subscriptionSatelliteIds = [
+      ...new Set(subscriptions.map((subscription) => subscription.satellite_id)),
+    ]
+    const subscriptionLocationIds = [
+      ...new Set(subscriptions.map((subscription) => subscription.location_id)),
+    ]
+    const subscriptionPassTypes = [
+      ...new Set(subscriptions.map((subscription) => subscription.pass_type)),
+    ]
+    const { data: matchingPassRows, error: passRowsError } = await supabase
+      .from("pass_predictions")
+      .select(
+        "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at"
+      )
+      .in("satellite_id", subscriptionSatelliteIds)
+      .in("location_id", subscriptionLocationIds)
+      .in("pass_type", subscriptionPassTypes)
+      .gte("start_utc", passStartLowerBound)
+      .order("start_utc", { ascending: true })
+      .limit(50)
+
+    if (passRowsError) {
+      return {
+        passes: [],
+        hasStale: false,
+        warnings,
+        error: passRowsError.message,
+      }
+    }
+
+    const predictionRows = (matchingPassRows ?? []).filter((row) =>
+      subscriptionMap.has(predictionKey(row))
+    )
+
+    console.info("[SurfPass feed]", {
+      groupId,
+      subscriptionCount: subscriptions.length,
+      passRowsReturned: predictionRows.length,
+    })
+
     const uniquePredictions = Array.from(
       new Map(predictionRows.map((row) => [row.cache_key, row])).values()
     ).sort(
@@ -342,9 +379,6 @@ export async function getGroupPassFeed(
     )
     const locationMap = new Map(
       (locations ?? []).map((location) => [location.id, location])
-    )
-    const subscriptionMap = new Map(
-      subscriptions.map((subscription) => [subscriptionKey(subscription), subscription])
     )
     const passes = uniquePredictions.slice(0, 12).map((row) => {
       const satellite = satelliteMap.get(row.satellite_id)

@@ -79,6 +79,7 @@ function jsonFailure(
       subscriptionsChecked: numberDetail(details, "subscriptionsChecked"),
       providerFetches: numberDetail(details, "providerFetches"),
       cacheHits: numberDetail(details, "cacheHits"),
+      passesNormalised: numberDetail(details, "passesNormalised"),
       passesUpserted: numberDetail(details, "passesUpserted"),
       warnings: warningDetails(details),
     },
