@@ -23,6 +23,7 @@
 - Users can read/update only their own profile.
 - Users can CRUD only their own locations.
 - Group rows, rosters, subscriptions, pass predictions, and RSVP rows are scoped to group membership.
+- Group creation and subscription RLS is captured in `supabase/migrations/0003_group_rls_repair.sql`, matching the hosted Supabase repair for `groups`, `group_members`, `group_subscriptions`, `is_group_member`, and `is_group_owner`.
 - RSVP writes require group membership and a pass prediction linked to a group subscription.
 - Notification deliveries are readable only by the owning user.
 - Provider cache, custom satellite, and alert delivery writes use server-only service-role code.
@@ -65,6 +66,7 @@
 6. Updated dashboard and group pass-feed queries to count only `status='sent'` delivery rows as delivered alert state.
 7. Updated settings copy to describe active manual and scheduled email delivery.
 8. Updated README, assumptions, reviewer flow, and test account setup docs to describe the pending-claim delivery model.
+9. Added `supabase/migrations/0003_group_rls_repair.sql` so the manual hosted Supabase group RLS repair is reproducible on fresh or existing projects.
 
 ## Validation Performed
 

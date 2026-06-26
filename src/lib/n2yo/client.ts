@@ -134,6 +134,31 @@ function splitTleLines(tle: string) {
     .filter(Boolean)
 }
 
+function normaliseNoPassPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload
+  }
+
+  const record = payload as Record<string, unknown>
+  const info = record.info
+  const passesCount =
+    info && typeof info === "object" && "passescount" in info
+      ? (info as { passescount?: unknown }).passescount
+      : undefined
+
+  if (
+    record.passes == null ||
+    (!Array.isArray(record.passes) && passesCount === 0)
+  ) {
+    return {
+      ...record,
+      passes: [],
+    }
+  }
+
+  return payload
+}
+
 export async function getTle(noradId: number): Promise<N2yoTleResponse> {
   const parsedNoradId = noradIdSchema.parse(noradId)
   const payload = await fetchN2yoJson(buildTleUrl(parsedNoradId), "tle")
@@ -237,7 +262,9 @@ export async function getVisualPasses(
   }
 
   const payload = await fetchN2yoJson(buildVisualPassesUrl(input), "visualpasses")
-  const parsed = n2yoVisualPassResponseSchema.safeParse(payload)
+  const parsed = n2yoVisualPassResponseSchema.safeParse(
+    normaliseNoPassPayload(payload)
+  )
 
   if (!parsed.success) {
     throw new N2yoLookupError(
@@ -262,7 +289,9 @@ export async function getRadioPasses(
   }
 
   const payload = await fetchN2yoJson(buildRadioPassesUrl(input), "radiopasses")
-  const parsed = n2yoRadioPassResponseSchema.safeParse(payload)
+  const parsed = n2yoRadioPassResponseSchema.safeParse(
+    normaliseNoPassPayload(payload)
+  )
 
   if (!parsed.success) {
     throw new N2yoLookupError(

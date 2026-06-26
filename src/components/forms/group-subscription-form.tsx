@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useState } from "react"
 import { AlertTriangle, Bell, Loader2, Radio } from "lucide-react"
 
 import { createGroupSubscriptionAction } from "@/app/(app)/groups/actions"
@@ -40,8 +40,21 @@ export function GroupSubscriptionForm({
     createGroupSubscriptionAction,
     initialGroupActionState
   )
+  const [selectedSatelliteId, setSelectedSatelliteId] = useState(
+    satellites[0]?.id ?? ""
+  )
+  const [selectedPassType, setSelectedPassType] = useState<"visual" | "radio">(
+    "visual"
+  )
   const missingOptions = locations.length === 0 || satellites.length === 0
   const disabled = isPending || missingOptions || currentUserRole !== "owner"
+  const selectedSatellite = satellites.find(
+    (satellite) => satellite.id === selectedSatelliteId
+  )
+  const showRadioSatelliteVisualWarning =
+    selectedPassType === "visual" &&
+    selectedSatellite?.noradId !== 25544 &&
+    selectedSatellite?.category?.toLowerCase().includes("amateur radio")
 
   return (
     <form
@@ -100,7 +113,8 @@ export function GroupSubscriptionForm({
           </Label>
           <Select
             name="satelliteId"
-            defaultValue={satellites[0]?.id}
+            value={selectedSatelliteId || undefined}
+            onValueChange={setSelectedSatelliteId}
             disabled={disabled}
           >
             <SelectTrigger className="w-full rounded-md border-zinc-300 bg-white">
@@ -122,7 +136,14 @@ export function GroupSubscriptionForm({
           <Label className="text-xs font-semibold uppercase text-zinc-500">
             Pass type
           </Label>
-          <Select name="passType" defaultValue="visual" disabled={disabled}>
+          <Select
+            name="passType"
+            value={selectedPassType}
+            onValueChange={(value) =>
+              setSelectedPassType(value === "radio" ? "radio" : "visual")
+            }
+            disabled={disabled}
+          >
             <SelectTrigger className="w-full rounded-md border-zinc-300 bg-white">
               <SelectValue />
             </SelectTrigger>
@@ -158,6 +179,17 @@ export function GroupSubscriptionForm({
           disabled={disabled}
         />
       </div>
+
+      {showRadioSatelliteVisualWarning ? (
+        <Alert className="rounded-md border-amber-200 bg-amber-50 text-amber-950">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>Mode guidance</AlertTitle>
+          <AlertDescription className="text-amber-900">
+            This satellite is mainly useful for radio passes. Visual forecasts
+            may return no windows.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 p-4">
         <div className="flex items-start gap-3">

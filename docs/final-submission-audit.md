@@ -68,6 +68,7 @@
 - Real user/account flow is documented through Supabase email/password auth.
 - Protected app routes exist for dashboard, locations, satellites, groups, group detail, group creation, and settings.
 - Shared group state is modelled with groups, group membership, and group subscriptions.
+- The group RLS repair is captured in `supabase/migrations/0003_group_rls_repair.sql` so fresh Supabase projects get the same `groups`, `group_members`, and `group_subscriptions` policies as the hosted project.
 - Location search is brokered through `/api/geocode`.
 - Satellite catalogue and custom NORAD lookup are server-side.
 - N2YO pass refresh is explicit, cached, and shown through pass cards.
