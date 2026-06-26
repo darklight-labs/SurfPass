@@ -89,8 +89,7 @@ export async function authenticateWithPassword(
   return {
     mode,
     status: "success",
-    message:
-      "Account created. Check your email if confirmation is enabled, then sign in.",
+    message: "Account created. Check email for confirmation, then sign in.",
   }
 }
 
