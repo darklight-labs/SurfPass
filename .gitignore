@@ -49,3 +49,8 @@ next-env.d.ts
 .vercel
 .supabase
 .tmp/
+
+# Local secrets
+.env
+.env.local
+.env.*.local
