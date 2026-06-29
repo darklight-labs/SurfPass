@@ -21,7 +21,6 @@ import { PassScoreBadge } from "@/components/data-display/pass-score-badge"
 import { PassSkyArc } from "@/components/data-display/pass-sky-arc"
 import { PassTimeline } from "@/components/data-display/pass-timeline"
 import { RsvpControl } from "@/components/data-display/rsvp-control"
-import { RsvpSummary } from "@/components/data-display/rsvp-summary"
 import {
   formatDuration,
   formatElevation,
@@ -50,12 +49,6 @@ const dataLabel: Record<DataState, string> = {
   unavailable: "Missing",
 }
 
-const rsvpStateLabel = {
-  going: "You're going",
-  maybe: "Maybe",
-  skipping: "Skipping",
-} as const
-
 export function PassCard({
   groupId,
   passPredictionId,
@@ -74,10 +67,11 @@ export function PassCard({
   magnitude,
   score,
   daylightLabel,
-  rsvpGoingCount,
-  rsvpMaybeCount,
-  rsvpSkippingCount,
-  currentUserRsvp,
+  currentUserRsvpStatus,
+  goingCount,
+  maybeCount,
+  skippingCount,
+  totalRsvpCount,
   currentUserNote,
   alertState,
   dataState,
@@ -175,7 +169,7 @@ export function PassCard({
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="grid gap-4">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-600">
               <CalendarClock className="size-4 text-zinc-500" />
@@ -184,39 +178,21 @@ export function PassCard({
               <span>Peak at {localMax}</span>
             </div>
           </div>
-          <RsvpSummary
-            goingCount={rsvpGoingCount}
-            maybeCount={rsvpMaybeCount}
-            skippingCount={rsvpSkippingCount}
-            currentUserRsvp={currentUserRsvp}
-          />
         </div>
 
         <Separator />
 
         {groupId && passPredictionId ? (
           <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase text-zinc-500">
-                Group readiness
-              </p>
-              <span className="text-xs font-medium text-zinc-600">
-                {currentUserRsvp
-                  ? rsvpStateLabel[currentUserRsvp]
-                  : "No RSVP yet"}
-              </span>
-            </div>
-            <RsvpSummary
-              goingCount={rsvpGoingCount}
-              maybeCount={rsvpMaybeCount}
-              skippingCount={rsvpSkippingCount}
-              currentUserRsvp={currentUserRsvp}
-              className="mb-3"
-            />
             <RsvpControl
+              key={`${currentUserRsvpStatus ?? "none"}-${goingCount}-${maybeCount}-${skippingCount}`}
               groupId={groupId}
               passPredictionId={passPredictionId}
-              currentUserRsvp={currentUserRsvp}
+              currentUserRsvpStatus={currentUserRsvpStatus}
+              goingCount={goingCount}
+              maybeCount={maybeCount}
+              skippingCount={skippingCount}
+              totalRsvpCount={totalRsvpCount}
               currentUserNote={currentUserNote}
             />
           </div>

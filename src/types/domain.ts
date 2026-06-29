@@ -76,12 +76,12 @@ export type PassCardViewModel = {
   magnitude?: number | string | null
   score: PassScore
   daylightLabel?: DaylightLabel | null
-  rsvpGoingCount: number
-  rsvpMaybeCount: number
-  rsvpSkippingCount?: number
-  currentUserRsvp?: RsvpStatus | null
+  currentUserRsvpStatus: RsvpStatus | null
+  goingCount: number
+  maybeCount: number
+  skippingCount: number
+  totalRsvpCount: number
   currentUserNote?: string | null
-  rsvpSummary?: string
   alertState: AlertState
   dataState: DataState
   fetchedAt?: string

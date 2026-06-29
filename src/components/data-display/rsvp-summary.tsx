@@ -1,30 +1,44 @@
 import { Badge } from "@/components/ui/badge"
-
-type RsvpStatus = "going" | "maybe" | "skipping" | null | undefined
+import type { RsvpStatus } from "@/types/domain"
 
 type RsvpSummaryProps = {
-  goingCount?: number
-  maybeCount?: number
-  skippingCount?: number
-  currentUserRsvp?: RsvpStatus
+  goingCount: number
+  maybeCount: number
+  skippingCount: number
+  totalRsvpCount: number
+  currentUserRsvpStatus: RsvpStatus | null
   className?: string
 }
 
-function getCurrentUserLabel(status: RsvpStatus) {
-  if (status === "going") return "You’re going"
-  if (status === "maybe") return "You’re maybe"
-  if (status === "skipping") return "You’re skipping"
+function getCurrentUserPill(status: RsvpStatus | null) {
+  if (status === "going") return "You: Going"
+  if (status === "maybe") return "You: Maybe"
+  if (status === "skipping") return "You: Skipping"
   return "No RSVP yet"
 }
 
+function getCurrentUserCopy(status: RsvpStatus | null) {
+  if (status === "going") return "You’re going."
+  if (status === "maybe") return "You’re maybe."
+  if (status === "skipping") return "You’re skipping this pass."
+  return "No RSVP yet."
+}
+
 export function RsvpSummary({
-  goingCount = 0,
-  maybeCount = 0,
-  skippingCount = 0,
-  currentUserRsvp = null,
+  goingCount,
+  maybeCount,
+  skippingCount,
+  totalRsvpCount,
+  currentUserRsvpStatus,
   className,
 }: RsvpSummaryProps) {
-  const hasReadiness = goingCount > 0 || maybeCount > 0 || skippingCount > 0
+  const summary = [
+    goingCount > 0 ? `${goingCount} going` : null,
+    maybeCount > 0 ? `${maybeCount} maybe` : null,
+    skippingCount > 0 ? `${skippingCount} skipping` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <div className={className}>
@@ -37,29 +51,18 @@ export function RsvpSummary({
           variant="outline"
           className="h-6 rounded-md border-zinc-300 bg-white px-2 text-xs text-zinc-700"
         >
-          {getCurrentUserLabel(currentUserRsvp)}
+          {getCurrentUserPill(currentUserRsvpStatus)}
         </Badge>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-700">
-        {hasReadiness ? (
-          <>
-            <span>{goingCount} going</span>
-            <span className="text-zinc-300">/</span>
-            <span>{maybeCount} maybe</span>
-            {skippingCount > 0 ? (
-              <>
-                <span className="text-zinc-300">/</span>
-                <span>{skippingCount} skipping</span>
-              </>
-            ) : null}
-          </>
-        ) : (
-          <span className="text-zinc-500">
-            No one has marked readiness yet.
-          </span>
-        )}
-      </div>
+      <p className="text-sm font-medium text-zinc-800">
+        {getCurrentUserCopy(currentUserRsvpStatus)}
+      </p>
+      <p className="mt-1 text-sm text-zinc-600">
+        {totalRsvpCount > 0
+          ? summary
+          : "No one has marked readiness yet."}
+      </p>
     </div>
   )
 }

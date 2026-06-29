@@ -106,6 +106,9 @@ export function mapPassPredictionToPassCardViewModel(
   }
 ): PassCardProps {
   const durationSeconds = fallbackDurationSeconds(row)
+  const goingCount = context.rsvpCounts?.going ?? 0
+  const maybeCount = context.rsvpCounts?.maybe ?? 0
+  const skippingCount = context.rsvpCounts?.skipping ?? 0
   const score =
     row.score ??
     scorePass({
@@ -133,14 +136,13 @@ export function mapPassPredictionToPassCardViewModel(
     magnitude: row.magnitude,
     score,
     daylightLabel: row.daylight_label ?? "unknown",
-    rsvpGoingCount: context.rsvpCounts?.going ?? 0,
-    rsvpMaybeCount: context.rsvpCounts?.maybe ?? 0,
-    rsvpSkippingCount: context.rsvpCounts?.skipping ?? 0,
-    currentUserRsvp: context.rsvpCounts?.currentUserRsvp ?? null,
+    currentUserRsvpStatus:
+      context.rsvpCounts?.currentUserRsvp ?? null,
+    goingCount,
+    maybeCount,
+    skippingCount,
+    totalRsvpCount: goingCount + maybeCount + skippingCount,
     currentUserNote: context.rsvpCounts?.currentUserNote,
-    rsvpSummary: `${context.rsvpCounts?.going ?? 0} going / ${
-      context.rsvpCounts?.maybe ?? 0
-    } maybe`,
     alertState: derivePassAlertState({
       passType: row.pass_type,
       startUtc: row.start_utc,
@@ -383,10 +385,13 @@ export async function getGroupPassFeed(
         new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
     const predictionIds = uniquePredictions.map((row) => row.id)
-    const [{ data: rsvps }, { data: deliveries }] =
+    const [
+      { data: rsvps, error: rsvpsError },
+      { data: deliveries, error: deliveriesError },
+    ] =
       predictionIds.length > 0
         ? await Promise.all([
-            supabase
+            cacheClient
               .from("pass_rsvps")
               .select(
                 "id,group_id,pass_prediction_id,user_id,status,note,created_at,updated_at"
@@ -405,9 +410,23 @@ export async function getGroupPassFeed(
               .in("pass_prediction_id", predictionIds),
           ])
         : [
-            { data: [] as RsvpRow[] },
-            { data: [] as NotificationDeliveryRow[] },
+            { data: [] as RsvpRow[], error: null },
+            { data: [] as NotificationDeliveryRow[], error: null },
           ]
+
+    if (rsvpsError) {
+      warnings.push("Group readiness could not be loaded.")
+      console.error("[SurfPass feed]", {
+        step: "rsvp_rows_failed",
+        groupId,
+        message: rsvpsError.message,
+      })
+    }
+
+    if (deliveriesError) {
+      warnings.push("Alert delivery state could not be loaded.")
+    }
+
     const rsvpCounts = mapRsvpCounts(rsvps ?? [], user.id)
     const deliverySet = mapDeliverySet(deliveries ?? [])
     const satelliteIds = [
