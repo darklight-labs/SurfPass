@@ -27,8 +27,8 @@ Use this checklist after the final Supabase project, Vercel deployment, and disp
   - SO-50, NORAD 27607
 - Subscriptions seeded: yes/no
 - Expected subscriptions:
-  - ISS visual from Cape Town / Signal Hill
-  - SO-50 radio from Cape Town / Signal Hill
+  - ISS radio from Cape Town / Signal Hill, 10° minimum elevation, 10 days ahead
+  - ISS visual from Cape Town / Signal Hill, optional
 - Alert preference enabled: yes/no
 - Alert lead time is 30 minutes: yes/no
 
@@ -41,7 +41,8 @@ Use this checklist after the final Supabase project, Vercel deployment, and disp
 - Groups page shows Cape Town Evening Spotters: yes/no
 - Group detail page shows subscriptions: yes/no
 - Pass refresh tested: yes/no
-- Pass cards visible, or provider/cache error is clear: yes/no
+- ISS radio pass cards visible when valid radio data is returned: yes/no
+- Visual zero-result state is non-fatal and clearly explained: yes/no
 - RSVP tested: yes/no
 - RSVP persists after reload: yes/no
 - Settings alert preferences tested: yes/no

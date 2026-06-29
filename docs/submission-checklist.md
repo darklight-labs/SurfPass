@@ -36,7 +36,8 @@ Use this as the final pre-send checklist. Do not send the assessment until every
 - [ ] Satellite catalogue present, including ISS and SO-50
 - [ ] Group present
 - [ ] Group membership present
-- [ ] Group subscriptions present: ISS visual and SO-50 radio
+- [ ] Primary group subscription present: ISS / NORAD 25544 / radio / 10° minimum elevation / 10 days ahead
+- [ ] Optional ISS visual subscription present (zero visible windows is valid)
 - [ ] Alert preference enabled
 
 ## Reviewer Flow QA
@@ -48,6 +49,7 @@ Use this as the final pre-send checklist. Do not send the assessment until every
 - [ ] Groups page loads and group is visible
 - [ ] Group detail page loads
 - [ ] Subscriptions are visible
+- [ ] ISS radio subscription is the primary smoke-test path
 - [ ] Pass refresh tested
 - [ ] Pass cards visible after refresh or clear provider/cache state shown
 - [ ] RSVP tested

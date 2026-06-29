@@ -25,8 +25,14 @@ type RefreshPassesSummary = {
   message: string
   groupId?: string
   subscriptionsChecked?: number
+  providerFetchesAttempted?: number
+  providerSuccesses?: number
+  providerZeroResultSubscriptions?: number
+  providerFailures?: number
   providerFetches?: number
   cacheHits?: number
+  passesStored?: number
+  passesRendered?: number
   passesNormalised?: number
   passesUpserted?: number
   warnings?: RefreshPassWarning[]
@@ -38,8 +44,14 @@ type RefreshPassFailure = {
   message: string
   details?: Record<string, unknown>
   subscriptionsChecked?: number
+  providerFetchesAttempted?: number
+  providerSuccesses?: number
+  providerZeroResultSubscriptions?: number
+  providerFailures?: number
   providerFetches?: number
   cacheHits?: number
+  passesStored?: number
+  passesRendered?: number
   passesNormalised?: number
   passesUpserted?: number
   warnings?: RefreshPassWarning[]
@@ -113,14 +125,17 @@ export function GroupPassRefreshButton({
 
   const noPassWindowsReturned =
     summary !== null &&
-    (summary.passesUpserted ?? 0) === 0 &&
-    (summary.providerFetches ?? 0) > 0 &&
+    (summary.passesStored ?? summary.passesUpserted ?? 0) === 0 &&
+    (summary.providerFetchesAttempted ?? summary.providerFetches ?? 0) > 0 &&
     (summary.cacheHits ?? 0) === 0 &&
-    (summary.warnings ?? []).some(
-      (warning) => warning.reason === "provider_returned_no_passes"
-    )
+    (summary.providerZeroResultSubscriptions ?? 0) > 0
   const summaryWarnings = summary?.warnings ?? []
   const errorWarnings = error?.warnings ?? []
+  const errorMessage =
+    error?.reason === "provider_error" ||
+    error?.reason === "provider_invalid_response"
+      ? "N2YO provider error. Check provider key/quota or try again."
+      : error?.message
 
   return (
     <div className="space-y-3">
@@ -145,7 +160,7 @@ export function GroupPassRefreshButton({
           <AlertTriangle className="size-4" />
           <AlertTitle>Refresh unavailable</AlertTitle>
           <AlertDescription className="space-y-2 text-red-900">
-            <span className="block">{error.message}</span>
+            <span className="block">{errorMessage}</span>
             <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-red-800">
               Reason: {error.reason}
             </span>
@@ -187,18 +202,24 @@ export function GroupPassRefreshButton({
             <span className="block">{summary.message}</span>
             <span className="block">
               {summary.subscriptionsChecked ?? 0} subscriptions checked,{" "}
+              {summary.providerFetchesAttempted ??
+                summary.providerFetches ??
+                0}{" "}
+              provider fetches attempted,{" "}
+              {summary.providerSuccesses ?? 0} provider successes,{" "}
+              {summary.providerZeroResultSubscriptions ?? 0} zero-result
+              subscriptions, {summary.providerFailures ?? 0} provider failures,{" "}
               {summary.cacheHits ?? 0} cache hits,{" "}
-              {summary.providerFetches ?? 0} provider fetches,{" "}
-              {summary.passesNormalised ?? 0} passes normalised,{" "}
-              {summary.passesUpserted ?? 0} passes stored.
+              {summary.passesStored ?? summary.passesUpserted ?? 0} passes
+              stored, {summary.passesRendered ?? 0} passes rendered.
             </span>
             <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
               Reason: {summary.reason}
             </span>
             {noPassWindowsReturned ? (
               <span className="block font-medium text-amber-900">
-                Refresh completed, but no pass windows were returned. Try ISS
-                for visual passes, or use radio mode for amateur satellites.
+                No provider windows returned for this subscription. Try radio
+                mode, lower threshold, or extend days ahead.
               </span>
             ) : null}
             {summaryWarnings.length > 0 ? (

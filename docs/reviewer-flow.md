@@ -88,10 +88,14 @@ Subscriptions are unique by group, location, satellite, and pass type.
 ## How To Test Pass Refresh
 
 1. Configure `SUPABASE_SERVICE_ROLE_KEY` and `N2YO_API_KEY`.
-2. Open a group with at least one subscription.
+2. Open a group with an ISS / NORAD 25544 / radio subscription using 10°
+   minimum elevation and 10 days ahead (1° is also valid for diagnostics).
 3. Click `Refresh passes`.
-4. Confirm the summary reports subscriptions checked, cache hits, provider fetches, and passes stored.
-5. Confirm upcoming pass cards appear in the group pass feed.
+4. Confirm the summary reports subscriptions checked, provider fetches
+   attempted, provider successes, zero-result subscriptions, provider failures,
+   cache hits, passes stored, and passes rendered.
+5. Confirm upcoming ISS radio pass cards appear in the group pass feed when
+   N2YO returns valid radio data. Visual zero-result responses are non-fatal.
 6. Inspect `System evidence` and confirm cached prediction counts and provider fetch attempts are visible for the group.
 7. Click refresh again within six hours and confirm fresh cache is reused where possible.
 

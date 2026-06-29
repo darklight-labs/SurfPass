@@ -7,9 +7,9 @@ Use this as the shortest path through the SurfPass assessment flow.
 3. Open `/locations` and confirm the saved observer locations exist, or search and save one.
 4. Open `/satellites` and confirm the curated catalogue is visible.
 5. Open `/groups` and choose the reviewer group.
-6. Inspect the group subscriptions: location, satellite, pass type, thresholds, days ahead, and alert intent.
+6. Inspect the primary ISS / NORAD 25544 / radio subscription: Cape Town / Signal Hill, 10° minimum elevation, 10 days ahead, and alerts enabled.
 7. Click `Refresh passes` on the group page.
-8. Confirm pass cards appear with time, type, score, direction, elevation, RSVP, alert, cache, and light context.
+8. Confirm ISS radio pass cards appear with time, type, score, direction, elevation, RSVP, alert, cache, and light context. An empty optional visual subscription is valid.
 9. Mark RSVP readiness as `Going`, `Maybe`, or `Skipping`.
 10. Send a manual test alert with `/api/alerts/test` or the documented request flow.
 11. Inspect `System evidence` on the group page for cache state, scoped provider logs, and current-user delivery records.

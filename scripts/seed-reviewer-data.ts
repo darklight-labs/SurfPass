@@ -401,7 +401,6 @@ async function ensureSubscriptions(input: {
   groupId: string
   locationId: string
   issSatelliteId: string
-  so50SatelliteId: string
 }) {
   return expectRows<ReviewerSubscriptionRow>(
     input.admin
@@ -412,20 +411,20 @@ async function ensureSubscriptions(input: {
             group_id: input.groupId,
             location_id: input.locationId,
             satellite_id: input.issSatelliteId,
-            pass_type: "visual",
-            min_elevation: 30,
+            pass_type: "radio",
+            min_elevation: 10,
             min_visibility_seconds: 120,
-            days_ahead: 7,
+            days_ahead: 10,
             alerts_enabled: true,
           },
           {
             group_id: input.groupId,
             location_id: input.locationId,
-            satellite_id: input.so50SatelliteId,
-            pass_type: "radio",
+            satellite_id: input.issSatelliteId,
+            pass_type: "visual",
             min_elevation: 30,
             min_visibility_seconds: 120,
-            days_ahead: 7,
+            days_ahead: 10,
             alerts_enabled: true,
           },
         ],
@@ -491,9 +490,8 @@ async function main() {
   const group = await ensureReviewerGroup(admin, reviewerUserId)
   const satellitesByNoradId = await ensureRequiredSatellites(admin)
   const iss = satellitesByNoradId.get(25544)
-  const so50 = satellitesByNoradId.get(27607)
 
-  if (!iss || !so50) {
+  if (!iss) {
     throw new Error("Required reviewer satellites were not available.")
   }
 
@@ -502,7 +500,6 @@ async function main() {
     groupId: group.id,
     locationId: primaryLocation.id,
     issSatelliteId: iss.id,
-    so50SatelliteId: so50.id,
   })
   const alertPreference = await ensureAlertPreference(
     admin,
@@ -526,8 +523,10 @@ async function main() {
   console.log("")
   console.log("Next steps:")
   console.log("1. Sign in with the reviewer account.")
-  console.log(`2. Open /groups/${group.id} and click Refresh passes.`)
-  console.log("3. RSVP to an upcoming pass from the group pass feed.")
+  console.log(
+    `2. Open /groups/${group.id} and confirm ISS radio uses 10° / 10 days.`
+  )
+  console.log("3. Click Refresh passes and use an ISS radio card for RSVP.")
   console.log("4. Use /settings to confirm email alerts are enabled.")
   console.log("5. Use /api/alerts/test after pass refresh to verify Resend.")
 }

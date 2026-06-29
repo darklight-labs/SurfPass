@@ -31,51 +31,56 @@ const n2yoInfoSchema = z.object({
   satname: z.string(),
   transactionscount: z.number().optional(),
   passescount: z.number().optional(),
-})
+}).passthrough()
+
+const optionalNumber = z.number().nullable().optional().transform((value) => value ?? undefined)
+const optionalString = z.string().nullable().optional().transform((value) => value ?? undefined)
 
 const n2yoVisualPassSchema = z
   .object({
-    startAz: z.number().optional(),
-    startAzCompass: z.string().optional(),
-    startEl: z.number().optional(),
-    startUTC: z.number(),
-    maxAz: z.number().optional(),
-    maxAzCompass: z.string().optional(),
-    maxEl: z.number(),
-    maxUTC: z.number(),
-    endAz: z.number().optional(),
-    endAzCompass: z.string().optional(),
-    endEl: z.number().optional(),
-    endUTC: z.number(),
-    mag: z.number().optional(),
-    duration: z.number().optional(),
+    startAz: optionalNumber,
+    startAzCompass: optionalString,
+    startEl: optionalNumber,
+    startUTC: optionalNumber,
+    maxAz: optionalNumber,
+    maxAzCompass: optionalString,
+    maxEl: optionalNumber,
+    maxUTC: optionalNumber,
+    endAz: optionalNumber,
+    endAzCompass: optionalString,
+    endEl: optionalNumber,
+    endUTC: optionalNumber,
+    mag: optionalNumber,
+    duration: optionalNumber,
+    startVisibility: z.union([z.number(), z.string()]).nullable().optional().transform((value) => value ?? undefined),
+    endVisibility: z.union([z.number(), z.string()]).nullable().optional().transform((value) => value ?? undefined),
   })
   .passthrough()
 
 const n2yoRadioPassSchema = z
   .object({
-    startAz: z.number().optional(),
-    startAzCompass: z.string().optional(),
-    startUTC: z.number(),
-    maxAz: z.number().optional(),
-    maxAzCompass: z.string().optional(),
-    maxEl: z.number(),
-    maxUTC: z.number(),
-    endAz: z.number().optional(),
-    endAzCompass: z.string().optional(),
-    endUTC: z.number(),
+    startAz: optionalNumber,
+    startAzCompass: optionalString,
+    startUTC: optionalNumber,
+    maxAz: optionalNumber,
+    maxAzCompass: optionalString,
+    maxEl: optionalNumber,
+    maxUTC: optionalNumber,
+    endAz: optionalNumber,
+    endAzCompass: optionalString,
+    endUTC: optionalNumber,
   })
   .passthrough()
 
 const n2yoVisualPassResponseSchema = z.object({
   info: n2yoInfoSchema,
-  passes: z.array(n2yoVisualPassSchema).optional().default([]),
-})
+  passes: z.array(n2yoVisualPassSchema),
+}).passthrough()
 
 const n2yoRadioPassResponseSchema = z.object({
   info: n2yoInfoSchema,
-  passes: z.array(n2yoRadioPassSchema).optional().default([]),
-})
+  passes: z.array(n2yoRadioPassSchema),
+}).passthrough()
 
 export class N2yoLookupError extends Error {
   code: N2yoLookupErrorCode
@@ -146,10 +151,7 @@ function normaliseNoPassPayload(payload: unknown) {
       ? (info as { passescount?: unknown }).passescount
       : undefined
 
-  if (
-    record.passes == null ||
-    (!Array.isArray(record.passes) && passesCount === 0)
-  ) {
+  if (record.passes == null && passesCount === 0) {
     return {
       ...record,
       passes: [],
@@ -157,6 +159,84 @@ function normaliseNoPassPayload(payload: unknown) {
   }
 
   return payload
+}
+
+function topLevelKeys(payload: unknown) {
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? Object.keys(payload as Record<string, unknown>).slice(0, 20)
+    : []
+}
+
+function redactSensitiveValues(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveValues)
+  }
+
+  if (!value || typeof value !== "object") {
+    return value
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      /api.?key|secret|token|authorization/i.test(key)
+        ? "[redacted]"
+        : redactSensitiveValues(entry),
+    ])
+  )
+}
+
+function safeJsonPreview(payload: unknown) {
+  try {
+    return JSON.stringify(redactSensitiveValues(payload)).slice(0, 500)
+  } catch {
+    return "[unserializable JSON]"
+  }
+}
+
+function providerErrorMessage(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null
+  }
+
+  const message = (payload as Record<string, unknown>).error
+  return typeof message === "string" && message.trim() ? message.trim() : null
+}
+
+function logInvalidPassResponse(endpoint: string, payload: unknown) {
+  console.error("[SurfPass N2YO]", {
+    endpoint,
+    reason: "unexpected_response",
+    topLevelKeys: topLevelKeys(payload),
+    bodyPreview: safeJsonPreview(payload),
+  })
+}
+
+function withOriginalPassObjects<
+  T extends { passes: Array<Record<string, unknown>> },
+>(parsed: T, payload: unknown): T {
+  const originalPasses =
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    Array.isArray((payload as Record<string, unknown>).passes)
+      ? ((payload as Record<string, unknown>).passes as unknown[])
+      : []
+
+  return {
+    ...parsed,
+    passes: parsed.passes.map((pass, index) => {
+      const original = originalPasses[index]
+
+      return {
+        ...pass,
+        raw:
+          original && typeof original === "object" && !Array.isArray(original)
+            ? (original as Record<string, unknown>)
+            : pass,
+      }
+    }),
+  }
 }
 
 export async function getTle(noradId: number): Promise<N2yoTleResponse> {
@@ -197,6 +277,43 @@ async function fetchN2yoJson(url: string, endpoint: string) {
     clearTimeout(timeout)
   }
 
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    console.error("[SurfPass N2YO]", {
+      endpoint,
+      providerStatus: response.status,
+      reason: "invalid_json",
+    })
+    throw new N2yoLookupError(
+      "unexpected_response",
+      `N2YO ${endpoint} lookup returned invalid JSON.`
+    )
+  }
+
+  const providerMessage = providerErrorMessage(payload)
+
+  console.info("[SurfPass N2YO]", {
+    endpoint,
+    providerStatus: response.status,
+    ok: response.ok,
+    topLevelKeys: topLevelKeys(payload),
+  })
+
+  if (providerMessage) {
+    console.error("[SurfPass N2YO]", {
+      endpoint,
+      providerStatus: response.status,
+      providerError: providerMessage,
+    })
+    throw new N2yoLookupError(
+      "provider_error",
+      providerMessage,
+      response.status
+    )
+  }
+
   if (!response.ok) {
     throw new N2yoLookupError(
       mapStatusToErrorCode(response.status),
@@ -205,14 +322,7 @@ async function fetchN2yoJson(url: string, endpoint: string) {
     )
   }
 
-  try {
-    return await response.json()
-  } catch {
-    throw new N2yoLookupError(
-      "unexpected_response",
-      `N2YO ${endpoint} lookup returned invalid JSON.`
-    )
-  }
+  return payload
 }
 
 function mapStatusToErrorCode(status: number): N2yoLookupErrorCode {
@@ -262,18 +372,18 @@ export async function getVisualPasses(
   }
 
   const payload = await fetchN2yoJson(buildVisualPassesUrl(input), "visualpasses")
-  const parsed = n2yoVisualPassResponseSchema.safeParse(
-    normaliseNoPassPayload(payload)
-  )
+  const normalisedPayload = normaliseNoPassPayload(payload)
+  const parsed = n2yoVisualPassResponseSchema.safeParse(normalisedPayload)
 
   if (!parsed.success) {
+    logInvalidPassResponse("visualpasses", payload)
     throw new N2yoLookupError(
       "unexpected_response",
       "N2YO visual passes returned an unexpected response."
     )
   }
 
-  return parsed.data
+  return withOriginalPassObjects(parsed.data, normalisedPayload)
 }
 
 export async function getRadioPasses(
@@ -289,18 +399,18 @@ export async function getRadioPasses(
   }
 
   const payload = await fetchN2yoJson(buildRadioPassesUrl(input), "radiopasses")
-  const parsed = n2yoRadioPassResponseSchema.safeParse(
-    normaliseNoPassPayload(payload)
-  )
+  const normalisedPayload = normaliseNoPassPayload(payload)
+  const parsed = n2yoRadioPassResponseSchema.safeParse(normalisedPayload)
 
   if (!parsed.success) {
+    logInvalidPassResponse("radiopasses", payload)
     throw new N2yoLookupError(
       "unexpected_response",
       "N2YO radio passes returned an unexpected response."
     )
   }
 
-  return parsed.data
+  return withOriginalPassObjects(parsed.data, normalisedPayload)
 }
 
 export async function validateNoradSatellite(

@@ -302,12 +302,16 @@ export async function getGroupPassFeed(
         .order("start_utc", { ascending: true })
 
       if (passRowsError) {
-        return {
-          passes: [],
-          hasStale: false,
-          warnings,
-          error: passRowsError.message,
-        }
+        warnings.push(
+          `Pass data could not be loaded for subscription ${subscription.id}.`
+        )
+        console.error("[SurfPass feed]", {
+          groupId,
+          subscriptionId: subscription.id,
+          step: "subscription_pass_rows_failed",
+          message: passRowsError.message,
+        })
+        continue
       }
 
       predictionRows.push(...(subscriptionPassRows ?? []))

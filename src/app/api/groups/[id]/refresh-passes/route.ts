@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache"
 import type { NextRequest } from "next/server"
 
 import { PassRefreshError, refreshPassesForGroup } from "@/lib/passes/cache"
+import { getGroupPassFeed } from "@/lib/passes/queries"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { uuidSchema } from "@/lib/validation/schemas"
 
@@ -77,8 +78,20 @@ function jsonFailure(
       message,
       details,
       subscriptionsChecked: numberDetail(details, "subscriptionsChecked"),
+      providerFetchesAttempted: numberDetail(
+        details,
+        "providerFetchesAttempted"
+      ),
+      providerSuccesses: numberDetail(details, "providerSuccesses"),
+      providerZeroResultSubscriptions: numberDetail(
+        details,
+        "providerZeroResultSubscriptions"
+      ),
+      providerFailures: numberDetail(details, "providerFailures"),
       providerFetches: numberDetail(details, "providerFetches"),
       cacheHits: numberDetail(details, "cacheHits"),
+      passesStored: numberDetail(details, "passesStored"),
+      passesRendered: numberDetail(details, "passesRendered"),
       passesNormalised: numberDetail(details, "passesNormalised"),
       passesUpserted: numberDetail(details, "passesUpserted"),
       warnings: warningDetails(details),
@@ -160,9 +173,42 @@ export async function POST(
 
   try {
     const summary = await refreshPassesForGroup(parsedGroupId.data)
+    try {
+      const passFeed = await getGroupPassFeed(parsedGroupId.data)
+
+      if (passFeed.error) {
+        console.error("[SurfPass refresh]", {
+          step: "passes_rendered_count_failed",
+          groupId: parsedGroupId.data,
+          message: passFeed.error,
+        })
+      } else {
+        summary.passesRendered = passFeed.passes.length
+      }
+    } catch (error) {
+      console.error("[SurfPass refresh]", {
+        step: "passes_rendered_count_failed",
+        groupId: parsedGroupId.data,
+        details: safeErrorDetails(error),
+      })
+    }
 
     revalidatePath(`/groups/${parsedGroupId.data}`)
     revalidatePath("/dashboard")
+
+    console.info("[SurfPass refresh]", {
+      step: "complete",
+      groupId: parsedGroupId.data,
+      subscriptionsChecked: summary.subscriptionsChecked,
+      providerFetchesAttempted: summary.providerFetchesAttempted,
+      providerSuccesses: summary.providerSuccesses,
+      providerZeroResultSubscriptions:
+        summary.providerZeroResultSubscriptions,
+      providerFailures: summary.providerFailures,
+      cacheHits: summary.cacheHits,
+      passesStored: summary.passesStored,
+      passesRendered: summary.passesRendered,
+    })
 
     return Response.json(summary)
   } catch (error) {

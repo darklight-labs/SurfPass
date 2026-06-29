@@ -165,17 +165,23 @@ npm run seed:reviewer
 
 The script creates or updates two subscriptions:
 
-1. ISS visual from Cape Town / Signal Hill
-   - `pass_type`: visual
-   - `min_visibility_seconds`: 120
-   - `days_ahead`: 7
+1. ISS radio from Cape Town / Signal Hill (primary smoke test)
+   - `norad_id`: 25544
+   - `pass_type`: radio
+   - `min_elevation`: 10
+   - `days_ahead`: 10
    - `alerts_enabled`: true
 
-2. SO-50 radio from Cape Town / Signal Hill
-   - `pass_type`: radio
-   - `min_elevation`: 30
-   - `days_ahead`: 7
+2. ISS visual from Cape Town / Signal Hill (optional)
+   - `norad_id`: 25544
+   - `pass_type`: visual
+   - `min_visibility_seconds`: 120
+   - `days_ahead`: 10
    - `alerts_enabled`: true
+
+For a manually created radio subscription, a 1° minimum elevation is also a
+valid diagnostic setting. Visual mode can legitimately return zero visible
+windows and is not the primary provider-health check.
 
 The database unique constraint on group, location, satellite, and pass type prevents duplicates.
 
@@ -189,8 +195,11 @@ After seeding:
 2. Open `/groups`.
 3. Open Cape Town Evening Spotters.
 4. Click `Refresh passes`.
-5. Confirm the response summary shows cache hits or provider fetches.
-6. Confirm pass cards appear if N2YO returns upcoming passes.
+5. Confirm the response summary shows subscriptions checked, provider fetches
+   attempted, provider successes, zero-result subscriptions, provider failures,
+   cache hits, passes stored, and passes rendered.
+6. Confirm at least one ISS radio pass card appears when N2YO returns valid
+   radio pass data.
 
 This keeps provider calls explicit and avoids hidden N2YO usage from seed tooling.
 

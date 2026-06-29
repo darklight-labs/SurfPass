@@ -31,6 +31,9 @@ export type RefreshPassWarningReason =
   | "provider_error"
   | "provider_invalid_response"
   | "normalisation_failed"
+  | "subscription_load_failed"
+  | "cache_write_failed"
+  | "api_fetch_log_failed"
   | "stale_cache_used"
   | "daylight_enrichment_failed"
   | "subscription_missing_reference"
@@ -71,8 +74,14 @@ export type RefreshPassesSummary = {
   message: string
   groupId: string
   subscriptionsChecked: number
+  providerFetchesAttempted: number
+  providerSuccesses: number
+  providerZeroResultSubscriptions: number
+  providerFailures: number
   providerFetches: number
   cacheHits: number
+  passesStored: number
+  passesRendered: number
   passesNormalised: number
   passesUpserted: number
   warnings: RefreshPassWarning[]
@@ -80,7 +89,11 @@ export type RefreshPassesSummary = {
 
 type SubscriptionRefreshSummary = {
   providerFetches: number
+  providerSuccesses: number
+  providerZeroResultSubscriptions: number
+  providerFailures: number
   cacheHits: number
+  passesAvailable: number
   passesNormalised: number
   passesUpserted: number
   warnings: RefreshPassWarning[]
@@ -140,8 +153,14 @@ function emptySummary(groupId: string): RefreshPassesSummary {
     message: "Pass refresh completed.",
     groupId,
     subscriptionsChecked: 0,
+    providerFetchesAttempted: 0,
+    providerSuccesses: 0,
+    providerZeroResultSubscriptions: 0,
+    providerFailures: 0,
     providerFetches: 0,
     cacheHits: 0,
+    passesStored: 0,
+    passesRendered: 0,
     passesNormalised: 0,
     passesUpserted: 0,
     warnings: [],
@@ -345,27 +364,35 @@ async function logProviderFetch(
     metadata?: Json
   }
 ) {
-  const { error } = await client.from("api_fetch_logs").insert({
-    provider: input.provider,
-    endpoint: input.endpoint,
-    status: input.status,
-    status_code: input.statusCode ?? null,
-    message: input.message ?? null,
-    metadata: input.metadata ?? null,
-  })
+  let error: unknown
+
+  try {
+    const result = await client.from("api_fetch_logs").insert({
+      provider: input.provider,
+      endpoint: input.endpoint,
+      status: input.status,
+      status_code: input.statusCode ?? null,
+      message: input.message ?? null,
+      metadata: input.metadata ?? null,
+    })
+    error = result.error
+  } catch (caught) {
+    error = caught
+  }
 
   if (error) {
-    throw createRefreshError(
-      "api_fetch_log_failed",
-      "Provider fetch diagnostics could not be written to api_fetch_logs.",
-      {
-        provider: input.provider,
-        endpoint: input.endpoint,
-        status: input.status,
-        error: safeErrorDetails(error),
-      }
-    )
+    console.error("[SurfPass refresh]", {
+      step: "api_fetch_log_failed",
+      provider: input.provider,
+      endpoint: input.endpoint,
+      status: input.status,
+      error: safeErrorDetails(error),
+    })
+
+    return false
   }
+
+  return true
 }
 
 function providerWarning(subscription: RefreshableSubscription, error: unknown) {
@@ -374,14 +401,10 @@ function providerWarning(subscription: RefreshableSubscription, error: unknown) 
       return "N2YO_API_KEY is not configured, so live pass refresh is unavailable."
     }
 
-    if (error.code === "rate_limited") {
-      return `N2YO rate-limited ${subscription.satellite.name}; cached data is being reused where available.`
-    }
-
-    return `N2YO could not refresh ${subscription.satellite.name}: ${error.message}`
+    return "N2YO provider error. Check provider key/quota or try again."
   }
 
-  return `N2YO could not refresh ${subscription.satellite.name}.`
+  return "N2YO provider error. Check provider key/quota or try again."
 }
 
 function endpointForPassType(passType: PassType) {
@@ -394,7 +417,8 @@ function noPassWarning(subscription: RefreshableSubscription): RefreshPassWarnin
     satelliteName: subscription.satellite.name,
     passType: subscription.passType,
     reason: "provider_returned_no_passes",
-    message: `N2YO returned no ${subscription.passType} passes for ${subscription.satellite.name} with the current threshold.`,
+    message:
+      "No provider windows returned for this subscription. Try radio mode, lower threshold, or extend days ahead.",
   }
 }
 
@@ -524,7 +548,11 @@ export async function refreshPassesForSubscription(
 ): Promise<SubscriptionRefreshSummary> {
   const summary: SubscriptionRefreshSummary = {
     providerFetches: 0,
+    providerSuccesses: 0,
+    providerZeroResultSubscriptions: 0,
+    providerFailures: 0,
     cacheHits: 0,
+    passesAvailable: 0,
     passesNormalised: 0,
     passesUpserted: 0,
     warnings: [],
@@ -535,16 +563,24 @@ export async function refreshPassesForSubscription(
   try {
     cached = await getCachedPassesForSubscription(client, subscription)
   } catch (error) {
-    throw createRefreshError(
-      "subscription_load_failed",
-      "Cached pass predictions could not be loaded for a subscription.",
-      {
+    const message =
+      "Cached pass predictions could not be loaded for this subscription."
+    addWarning(summary, {
+      subscriptionId: subscription.id,
+      satelliteName: subscription.satellite.name,
+      passType: subscription.passType,
+      reason: "subscription_load_failed",
+      message,
+    })
+    summary.infrastructureFailures.push(
+      failureRecord("subscription_load_failed", message, {
         subscriptionId: subscription.id,
         satelliteName: subscription.satellite.name,
         passType: subscription.passType,
         error: safeErrorDetails(error),
-      }
+      })
     )
+    return summary
   }
 
   const cacheIsFresh = hasFreshCachedPassRows(cached)
@@ -560,6 +596,7 @@ export async function refreshPassesForSubscription(
 
   if (cacheIsFresh) {
     summary.cacheHits += 1
+    summary.passesAvailable += cached.length
     return summary
   }
 
@@ -606,6 +643,7 @@ export async function refreshPassesForSubscription(
       passType: subscription.passType,
       passCount: providerResponse.passes.length,
     })
+    summary.providerSuccesses += 1
 
     try {
       passes =
@@ -645,6 +683,7 @@ export async function refreshPassesForSubscription(
       })
 
       if (cached.length > 0) {
+        summary.passesAvailable += cached.length
         addWarning(summary, {
           subscriptionId: subscription.id,
           satelliteName: subscription.satellite.name,
@@ -667,19 +706,20 @@ export async function refreshPassesForSubscription(
     }
   } catch (error) {
     const reason = providerFailureReason(error)
-
-    if (reason === "missing_n2yo_api_key") {
-      throw createRefreshError(
-        "missing_n2yo_api_key",
-        "N2YO_API_KEY is not configured, so live pass refresh is unavailable.",
-        { envVar: "N2YO_API_KEY" }
-      )
-    }
+    summary.providerFailures += 1
 
     const warning = providerErrorWarning(subscription, error)
     addWarning(summary, warning)
+    console.error("[SurfPass refresh]", {
+      step: "provider_fetch_failed",
+      satelliteName: subscription.satellite.name,
+      noradId: subscription.satellite.noradId,
+      passType: subscription.passType,
+      error: safeErrorDetails(error),
+    })
 
     if (cached.length > 0) {
+      summary.passesAvailable += cached.length
       addWarning(summary, {
         subscriptionId: subscription.id,
         satelliteName: subscription.satellite.name,
@@ -693,7 +733,12 @@ export async function refreshPassesForSubscription(
           subscriptionId: subscription.id,
           satelliteName: subscription.satellite.name,
           passType: subscription.passType,
-          error: safeErrorDetails(error),
+          providerCode:
+            error instanceof N2yoLookupError ? error.code : "unknown",
+          providerStatus:
+            error instanceof N2yoLookupError
+              ? error.providerStatus
+              : undefined,
         })
       )
     }
@@ -727,6 +772,7 @@ export async function refreshPassesForSubscription(
   })
 
   if (passes.length === 0) {
+    summary.providerZeroResultSubscriptions += 1
     addWarning(summary, noPassWarning(subscription))
     await logProviderFetch(client, {
       provider: "n2yo",
@@ -780,12 +826,50 @@ export async function refreshPassesForSubscription(
     })
   }
 
-  const passesUpserted = await upsertPassPredictions(
-    client,
-    daylight.passes,
-    fetchedAt
-  )
+  let passesUpserted: number
+
+  try {
+    passesUpserted = await upsertPassPredictions(
+      client,
+      daylight.passes,
+      fetchedAt
+    )
+  } catch (error) {
+    const message =
+      "N2YO returned pass windows, but SurfPass could not store them."
+    addWarning(summary, {
+      subscriptionId: subscription.id,
+      satelliteName: subscription.satellite.name,
+      passType: subscription.passType,
+      reason: "cache_write_failed",
+      message,
+    })
+
+    if (cached.length > 0) {
+      summary.passesAvailable += cached.length
+      addWarning(summary, {
+        subscriptionId: subscription.id,
+        satelliteName: subscription.satellite.name,
+        passType: subscription.passType,
+        reason: "stale_cache_used",
+        message: `Showing stale cached pass data for ${subscription.satellite.name}.`,
+      })
+    } else {
+      summary.infrastructureFailures.push(
+        failureRecord("cache_write_failed", message, {
+          subscriptionId: subscription.id,
+          satelliteName: subscription.satellite.name,
+          passType: subscription.passType,
+          error: safeErrorDetails(error),
+        })
+      )
+    }
+
+    return summary
+  }
+
   summary.passesUpserted += passesUpserted
+  summary.passesAvailable += passesUpserted
   console.info("[SurfPass refresh]", {
     step: "upsert_done",
     satelliteName: subscription.satellite.name,
@@ -955,29 +1039,67 @@ export async function refreshPassesForGroup(
   )
   const daylightCache: DaylightLookupCache = new Map()
   const infrastructureFailures: RefreshFailureRecord[] = []
+  let passesAvailable = 0
 
   mapped.warnings.forEach((warning) => addWarning(summary, warning))
   summary.subscriptionsChecked = subscriptions.length
 
   for (const subscription of mapped.subscriptions) {
-    const result = await refreshPassesForSubscription(
-      client,
-      subscription,
-      daylightCache
-    )
+    let result: SubscriptionRefreshSummary
+
+    try {
+      result = await refreshPassesForSubscription(
+        client,
+        subscription,
+        daylightCache
+      )
+    } catch (error) {
+      const failure =
+        error instanceof PassRefreshError
+          ? failureRecord(error.reason, error.message, error.details)
+          : failureRecord(
+              "unknown_refresh_error",
+              "A subscription failed unexpectedly during pass refresh.",
+              safeErrorDetails(error)
+            )
+      infrastructureFailures.push(failure)
+      addWarning(summary, {
+        subscriptionId: subscription.id,
+        satelliteName: subscription.satellite.name,
+        passType: subscription.passType,
+        reason: "subscription_load_failed",
+        message: failure.message,
+      })
+      console.error("[SurfPass refresh]", {
+        step: "subscription_refresh_failed",
+        subscriptionId: subscription.id,
+        satelliteName: subscription.satellite.name,
+        passType: subscription.passType,
+        error: safeErrorDetails(error),
+      })
+      continue
+    }
+
     summary.providerFetches += result.providerFetches
+    summary.providerSuccesses += result.providerSuccesses
+    summary.providerZeroResultSubscriptions +=
+      result.providerZeroResultSubscriptions
+    summary.providerFailures += result.providerFailures
     summary.cacheHits += result.cacheHits
     summary.passesNormalised += result.passesNormalised
     summary.passesUpserted += result.passesUpserted
+    passesAvailable += result.passesAvailable
     infrastructureFailures.push(...result.infrastructureFailures)
     result.warnings.forEach((warning) => addWarning(summary, warning))
   }
 
+  summary.providerFetchesAttempted = summary.providerFetches
+  summary.passesStored = summary.passesUpserted
+
   if (
-    summary.providerFetches > 0 &&
-    infrastructureFailures.length === summary.providerFetches &&
-    summary.cacheHits === 0 &&
-    summary.passesUpserted === 0
+    infrastructureFailures.length > 0 &&
+    summary.providerZeroResultSubscriptions === 0 &&
+    passesAvailable === 0
   ) {
     const failure = infrastructureFailures[0]
 
@@ -988,8 +1110,15 @@ export async function refreshPassesForGroup(
       {
         ...(failure?.details ?? {}),
         subscriptionsChecked: summary.subscriptionsChecked,
+        providerFetchesAttempted: summary.providerFetchesAttempted,
+        providerSuccesses: summary.providerSuccesses,
+        providerZeroResultSubscriptions:
+          summary.providerZeroResultSubscriptions,
+        providerFailures: summary.providerFailures,
         providerFetches: summary.providerFetches,
         cacheHits: summary.cacheHits,
+        passesStored: summary.passesStored,
+        passesRendered: summary.passesRendered,
         passesNormalised: summary.passesNormalised,
         passesUpserted: summary.passesUpserted,
         warnings: summary.warnings,
@@ -1007,7 +1136,7 @@ export async function refreshPassesForGroup(
   ) {
     summary.reason = "provider_returned_no_passes"
     summary.message =
-      "Refresh completed, but N2YO returned no pass windows for the current subscriptions and thresholds."
+      "No provider windows returned for this subscription. Try radio mode, lower threshold, or extend days ahead."
   } else if (summary.warnings.length > 0) {
     summary.reason = "refresh_completed_with_warnings"
     summary.message = "Pass refresh completed with warnings."

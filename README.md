@@ -80,6 +80,13 @@ npm run seed:reviewer
 
 See [docs/test-account-setup.md](docs/test-account-setup.md) for the full reviewer account setup path.
 
+The primary provider smoke test is an ISS subscription using NORAD `25544`,
+`radio` mode, a `10°` minimum elevation, and `10` days ahead. A `1°` minimum
+elevation is also suitable when testing manually. Radio is the reviewer path
+because it should produce contact windows whenever N2YO has valid ISS radio
+data. Visual subscriptions are optional and may legitimately return no visible
+windows for a location and forecast period.
+
 Before deployment or submission, run:
 
 ```bash
@@ -134,6 +141,11 @@ A good radio pass is a future pass where the satellite reaches at least 30 degre
 A good visual pass is a future pass returned by the provider as visible, with a useful duration and meaningful elevation.
 
 Visual passes use N2YO `visualpasses`; radio passes use N2YO `radiopasses`. SurfPass scores normalised provider data as `excellent`, `good`, or `low` using max elevation, duration, and visual magnitude when available.
+
+For reviewer validation, use ISS / NORAD 25544 / radio / 10° minimum elevation
+/ 10 days ahead. Lowering the threshold to 1° is a useful diagnostic if a
+location has few windows. Treat visual passes as optional rather than as the
+provider-health smoke test.
 
 Sunrise-Sunset is used as non-critical daylight and twilight enrichment during pass refresh. It labels cached pass cards as daylight, night, civil twilight, nautical twilight, astronomical twilight, or unknown. N2YO remains the source of truth for visual pass predictions, and daylight context does not determine whether a pass is valid.
 
