@@ -131,6 +131,10 @@ export function GroupPassRefreshButton({
     (summary.providerZeroResultSubscriptions ?? 0) > 0
   const summaryWarnings = summary?.warnings ?? []
   const errorWarnings = error?.warnings ?? []
+  const storedButNotRendered =
+    summary !== null &&
+    (summary.passesStored ?? summary.passesUpserted ?? 0) > 0 &&
+    (summary.passesRendered ?? 0) === 0
   const errorMessage =
     error?.reason === "provider_error" ||
     error?.reason === "provider_invalid_response"
@@ -220,6 +224,12 @@ export function GroupPassRefreshButton({
               <span className="block font-medium text-amber-900">
                 No provider windows returned for this subscription. Try radio
                 mode, lower threshold, or extend days ahead.
+              </span>
+            ) : null}
+            {storedButNotRendered ? (
+              <span className="block font-medium text-amber-900">
+                Provider data was stored, but no matching feed rows were
+                rendered. Check feed matching.
               </span>
             ) : null}
             {summaryWarnings.length > 0 ? (

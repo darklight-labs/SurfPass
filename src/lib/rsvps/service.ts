@@ -1,5 +1,6 @@
 import "server-only"
 
+import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import type { RsvpStatus } from "@/types/domain"
 
@@ -47,7 +48,15 @@ export async function upsertRsvpForUser({
     return errorResult("Only group members can RSVP to this pass.")
   }
 
-  const { data: passPrediction, error: passError } = await supabase
+  let admin: ReturnType<typeof createAdminSupabaseClient>
+
+  try {
+    admin = createAdminSupabaseClient()
+  } catch {
+    return errorResult("RSVP storage is unavailable right now.")
+  }
+
+  const { data: passPrediction, error: passError } = await admin
     .from("pass_predictions")
     .select("id,satellite_id,location_id,pass_type")
     .eq("id", passPredictionId)
@@ -61,7 +70,7 @@ export async function upsertRsvpForUser({
     return errorResult("Pass prediction is unavailable.")
   }
 
-  const { data: subscription, error: subscriptionError } = await supabase
+  const { data: subscription, error: subscriptionError } = await admin
     .from("group_subscriptions")
     .select("id")
     .eq("group_id", groupId)
@@ -78,7 +87,7 @@ export async function upsertRsvpForUser({
     return errorResult("This pass is not linked to the selected group.")
   }
 
-  const { error } = await supabase.from("pass_rsvps").upsert(
+  const { error } = await admin.from("pass_rsvps").upsert(
     {
       group_id: groupId,
       pass_prediction_id: passPredictionId,

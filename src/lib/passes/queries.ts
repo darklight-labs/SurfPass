@@ -3,11 +3,9 @@ import "server-only"
 import { derivePassAlertState } from "@/lib/alerts/state"
 import { EnvValidationError } from "@/lib/env"
 import { requireUser } from "@/lib/auth/guards"
-import {
-  getPassPredictionStartLowerBound,
-  isCacheFresh,
-} from "@/lib/passes/cache"
+import { isCacheFresh } from "@/lib/passes/cache"
 import { scorePass } from "@/lib/passes/scoring"
+import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { formatLocalPassTime } from "@/lib/utils/dates"
 import type { PassCardProps } from "@/components/data-display/pass-card"
@@ -24,6 +22,8 @@ type AlertPreferenceRow =
   Database["public"]["Tables"]["alert_preferences"]["Row"]
 type NotificationDeliveryRow =
   Database["public"]["Tables"]["notification_deliveries"]["Row"]
+const PASS_QUERY_LIMIT_PER_SUBSCRIPTION = 50
+const PASS_FEED_RENDER_LIMIT = 20
 
 type RsvpCounts = {
   going: number
@@ -219,6 +219,26 @@ export async function getGroupPassFeed(
     const user = await requireUser()
 
     const supabase = await createServerSupabaseClient()
+    const { data: membership, error: membershipError } = await supabase
+      .from("group_members")
+      .select("group_id,user_id,role,created_at")
+      .eq("group_id", groupId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    if (membershipError) {
+      return {
+        passes: [],
+        hasStale: false,
+        warnings: [],
+        error: "Group membership could not be verified for the pass feed.",
+      }
+    }
+
+    if (!membership) {
+      return { passes: [], hasStale: false, warnings: [] }
+    }
+
     const { data: group, error: groupError } = await supabase
       .from("groups")
       .select("id,owner_id,name,description,created_at,updated_at")
@@ -226,7 +246,12 @@ export async function getGroupPassFeed(
       .maybeSingle()
 
     if (groupError) {
-      return { passes: [], hasStale: false, warnings: [], error: groupError.message }
+      return {
+        passes: [],
+        hasStale: false,
+        warnings: [],
+        error: groupError.message,
+      }
     }
 
     if (!group) {
@@ -259,6 +284,13 @@ export async function getGroupPassFeed(
       return { passes: [], hasStale: false, warnings: [] }
     }
 
+    console.info("[SurfPass feed]", {
+      step: "subscriptions_loaded",
+      groupId,
+      subscriptionCount: subscriptions.length,
+      subscriptionIds: subscriptions.map((subscription) => subscription.id),
+    })
+
     const warnings: string[] = []
     const { data: alertPreference, error: alertPreferenceError } = await supabase
       .from("alert_preferences")
@@ -274,32 +306,36 @@ export async function getGroupPassFeed(
     }
 
     const alertSettings = getAlertPreferenceDefaults(alertPreference)
-    const passStartLowerBound = getPassPredictionStartLowerBound()
+    const cacheClient = createAdminSupabaseClient()
+    const nowUtc = new Date().toISOString()
     const subscriptionMap = new Map(
-      subscriptions.map((subscription) => [subscriptionKey(subscription), subscription])
+      subscriptions.map((subscription) => [
+        subscriptionKey(subscription),
+        subscription,
+      ])
     )
-    const subscriptionSatelliteIds = [
-      ...new Set(subscriptions.map((subscription) => subscription.satellite_id)),
-    ]
-    const subscriptionLocationIds = [
-      ...new Set(subscriptions.map((subscription) => subscription.location_id)),
-    ]
-    const subscriptionPassTypes = [
-      ...new Set(subscriptions.map((subscription) => subscription.pass_type)),
-    ]
     const predictionRows: PassPredictionRow[] = []
 
     for (const subscription of subscriptions) {
-      const { data: subscriptionPassRows, error: passRowsError } = await supabase
-        .from("pass_predictions")
-        .select(
-          "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at"
-        )
-        .eq("satellite_id", subscription.satellite_id)
-        .eq("location_id", subscription.location_id)
-        .eq("pass_type", subscription.pass_type)
-        .gte("start_utc", passStartLowerBound)
-        .order("start_utc", { ascending: true })
+      const {
+        data: subscriptionPassRows,
+        error: passRowsError,
+        count: matchingPassPredictionsCount,
+      } =
+        await cacheClient
+          .from("pass_predictions")
+          .select(
+            "id,satellite_id,location_id,pass_type,source,start_utc,max_utc,end_utc,start_az,start_az_compass,start_el,max_az,max_az_compass,max_el,end_az,end_az_compass,end_el,magnitude,duration_seconds,score,daylight_label,daylight_context,daylight_fetched_at,raw,fetched_at,cache_key,created_at",
+            { count: "exact" }
+          )
+          .eq("satellite_id", subscription.satellite_id)
+          .eq("location_id", subscription.location_id)
+          .eq("pass_type", subscription.pass_type)
+          // start_utc <= end_utc is enforced by the database, so end_utc > now
+          // includes both not-yet-started and currently active pass windows.
+          .gt("end_utc", nowUtc)
+          .order("start_utc", { ascending: true })
+          .limit(PASS_QUERY_LIMIT_PER_SUBSCRIPTION)
 
       if (passRowsError) {
         warnings.push(
@@ -309,12 +345,29 @@ export async function getGroupPassFeed(
           groupId,
           subscriptionId: subscription.id,
           step: "subscription_pass_rows_failed",
+          satellite_id: subscription.satellite_id,
+          location_id: subscription.location_id,
+          pass_type: subscription.pass_type,
           message: passRowsError.message,
         })
         continue
       }
 
-      predictionRows.push(...(subscriptionPassRows ?? []))
+      const matches = subscriptionPassRows ?? []
+
+      console.info("[SurfPass feed]", {
+        step: "subscription_match",
+        groupId,
+        subscriptionId: subscription.id,
+        satellite_id: subscription.satellite_id,
+        location_id: subscription.location_id,
+        pass_type: subscription.pass_type,
+        matchingPassPredictionsCount:
+          matchingPassPredictionsCount ?? matches.length,
+        firstMatchingStartUtc: matches[0]?.start_utc ?? null,
+      })
+
+      predictionRows.push(...matches)
     }
 
     console.info("[SurfPass feed]", {
@@ -322,19 +375,6 @@ export async function getGroupPassFeed(
       subscriptionCount: subscriptions.length,
       passRowsReturned: predictionRows.length,
     })
-
-    if (predictionRows.length === 0) {
-      console.info("[SurfPass feed]", {
-        groupId,
-        subscriptionCount: subscriptions.length,
-        passRowsReturned: 0,
-        startLowerBound: passStartLowerBound,
-        subscriptionIds: subscriptions.map((subscription) => subscription.id),
-        satelliteIds: subscriptionSatelliteIds,
-        locationIds: subscriptionLocationIds,
-        passTypes: subscriptionPassTypes,
-      })
-    }
 
     const uniquePredictions = Array.from(
       new Map(predictionRows.map((row) => [row.cache_key, row])).values()
@@ -373,10 +413,12 @@ export async function getGroupPassFeed(
     const satelliteIds = [
       ...new Set(uniquePredictions.map((row) => row.satellite_id)),
     ]
-    const locationIds = [...new Set(uniquePredictions.map((row) => row.location_id))]
+    const locationIds = [
+      ...new Set(uniquePredictions.map((row) => row.location_id)),
+    ]
     const [{ data: satellites }, { data: locations }] = await Promise.all([
       satelliteIds.length > 0
-        ? supabase
+        ? cacheClient
             .from("satellites")
             .select(
               "id,norad_id,name,category,description,is_curated,created_at,updated_at"
@@ -384,7 +426,7 @@ export async function getGroupPassFeed(
             .in("id", satelliteIds)
         : Promise.resolve({ data: [] as SatelliteRow[] }),
       locationIds.length > 0
-        ? supabase
+        ? cacheClient
             .from("locations")
             .select(
               "id,user_id,name,label,latitude,longitude,elevation_m,timezone,country,is_default,created_at,updated_at"
@@ -398,25 +440,27 @@ export async function getGroupPassFeed(
     const locationMap = new Map(
       (locations ?? []).map((location) => [location.id, location])
     )
-    const passes = uniquePredictions.slice(0, 12).map((row) => {
-      const satellite = satelliteMap.get(row.satellite_id)
-      const location = locationMap.get(row.location_id)
-      const subscription = subscriptionMap.get(predictionKey(row))
+    const passes = uniquePredictions
+      .slice(0, PASS_FEED_RENDER_LIMIT)
+      .map((row) => {
+        const satellite = satelliteMap.get(row.satellite_id)
+        const location = locationMap.get(row.location_id)
+        const subscription = subscriptionMap.get(predictionKey(row))
 
-      return mapPassPredictionToPassCardViewModel(row, {
-        groupId,
-        passPredictionId: row.id,
-        groupName: group.name,
-        satelliteName: satellite?.name ?? "Satellite",
-        timezone: location?.timezone,
-        alertsEnabled: subscription?.alerts_enabled,
-        userEmailAlertsEnabled: alertSettings.emailEnabled,
-        alertDeliveryExists: deliverySet.has(`${groupId}:${row.id}`),
-        minElevation: subscription?.min_elevation,
-        minVisibilitySeconds: subscription?.min_visibility_seconds,
-        rsvpCounts: rsvpCounts.get(row.id) ?? emptyRsvpCounts(),
+        return mapPassPredictionToPassCardViewModel(row, {
+          groupId,
+          passPredictionId: row.id,
+          groupName: group.name,
+          satelliteName: satellite?.name ?? "Satellite",
+          timezone: location?.timezone,
+          alertsEnabled: subscription?.alerts_enabled,
+          userEmailAlertsEnabled: alertSettings.emailEnabled,
+          alertDeliveryExists: deliverySet.has(`${groupId}:${row.id}`),
+          minElevation: subscription?.min_elevation,
+          minVisibilitySeconds: subscription?.min_visibility_seconds,
+          rsvpCounts: rsvpCounts.get(row.id) ?? emptyRsvpCounts(),
+        })
       })
-    })
     const hasStale = passes.some((pass) => pass.dataState === "stale")
 
     return {
