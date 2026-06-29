@@ -31,6 +31,7 @@ Required later for the full reviewer pass/alert path:
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL`
 - `CRON_SECRET`
+- `TEST_ALERT_EMAIL`
 - `APP_BASE_URL` or `NEXT_PUBLIC_APP_URL`
 
 Do not commit `.env.local`, real credentials, passwords, service role keys, or API keys.
@@ -229,11 +230,13 @@ Confirm in the UI:
 
 Manual test alert after pass refresh:
 
-1. Configure Resend env vars.
-2. Copy a `passPredictionId` from the refreshed group pass feed or database.
-3. Send an authenticated `POST /api/alerts/test` request with `groupId`, `passPredictionId`, and `leadMinutes`.
-4. Confirm the first send records `notification_deliveries.status='sent'`.
-5. Repeat the same request and confirm it dedupes.
+1. Configure Resend env vars, `CRON_SECRET`, and `TEST_ALERT_EMAIL`.
+2. Send `POST /api/alerts/test` with
+   `Authorization: Bearer ${CRON_SECRET}` and no request body.
+3. Confirm the response includes `ok: true`, the provider message id, and
+   `TEST_ALERT_EMAIL` as the recipient.
+4. Confirm the message arrives. This smoke test does not create a
+   `notification_deliveries` row.
 
 ## Final README Values To Update
 

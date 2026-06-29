@@ -32,6 +32,7 @@ Server-only runtime:
 - `RESEND_API_KEY` - required for manual and scheduled email alert delivery.
 - `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL` - required for manual and scheduled email alert delivery.
 - `CRON_SECRET` - required for the protected scheduled alert route.
+- `TEST_ALERT_EMAIL` - internal recipient for the protected manual Resend smoke test.
 
 Only `NEXT_PUBLIC_*` values are browser-safe.
 
@@ -120,29 +121,28 @@ Security checks require the user to be a member of the group and the pass to bel
 5. Toggle email alerts on, choose 15, 30, 60, or 120 minutes, and save.
 6. Confirm future qualifying pass cards show scheduled unless a matching `notification_deliveries` row with `status='sent'` already exists.
 
-Manual and scheduled sends create `notification_deliveries`, and those records drive real sent state.
+Scheduled sends create `notification_deliveries`, and those records drive real
+sent state. The protected manual smoke test verifies Resend configuration only.
 
 ## How To Test Email Alert Manually
 
-1. Configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`, and `APP_BASE_URL`.
-2. Sign in with a user that belongs to a group with a refreshed future pass.
-3. Copy the group id and pass prediction id from the database or network response for the group pass feed.
-4. Send an authenticated POST request to `/api/alerts/test`:
+1. Configure `CRON_SECRET`, `TEST_ALERT_EMAIL`, `RESEND_API_KEY`, and
+   `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL`.
+2. Send a protected POST request to `/api/alerts/test`:
 
-```json
-{
-  "groupId": "00000000-0000-0000-0000-000000000000",
-  "passPredictionId": "00000000-0000-0000-0000-000000000000",
-  "leadMinutes": 30
-}
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  http://localhost:3000/api/alerts/test
 ```
 
-5. Confirm the response returns `"status": "sent"` and a provider message id.
-6. Repeat the same request and confirm it returns `"status": "deduped"`.
-7. Confirm a `notification_deliveries` row with `status='sent'` exists for the user, group, pass, `email` channel, and lead time.
-8. Inspect `System evidence` and confirm the signed-in user's notification delivery is visible without exposing other users' deliveries.
+3. Confirm the response returns `ok: true`, a provider message id, and the
+   configured test recipient.
+4. Confirm the email arrives at `TEST_ALERT_EMAIL`.
 
-The route sends only to the signed-in user's Supabase Auth email. No arbitrary recipient override is supported.
+The route accepts no recipient or alert content from the request and does not
+create a `notification_deliveries` row. Scheduled alert delivery remains the
+path that exercises per-pass delivery records and deduplication.
 
 ## How To Test Scheduled Cron Alerts
 

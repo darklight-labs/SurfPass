@@ -51,6 +51,7 @@ N2YO_API_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
 CRON_SECRET=
+TEST_ALERT_EMAIL=
 ```
 
 Start the app:
@@ -118,6 +119,7 @@ Server-only variables:
 - `RESEND_API_KEY` - required for manual alert email sending and scheduled cron delivery.
 - `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL` - required for manual alert email sending and scheduled cron delivery.
 - `CRON_SECRET` - required for the protected Vercel Cron alert route.
+- `TEST_ALERT_EMAIL` - safe internal recipient for the protected manual test email route.
 - `REVIEWER_USER_ID` - local-only helper for `npm run seed:reviewer`; this identifies an existing Supabase Auth user and is not a password.
 
 Do not expose service role, N2YO, Resend, or cron secrets to client components. Only `NEXT_PUBLIC_*` values are browser-safe.
@@ -191,7 +193,15 @@ Group subscriptions still control whether a watched satellite/location/pass type
 
 `notification_deliveries` is the source of truth for sent alert state. A pass is never shown as sent unless a delivery record with `status='sent'` exists for the current user, group, pass, channel, and lead time.
 
-`POST /api/alerts/test` sends a guarded manual test alert for the signed-in user only. The route requires `groupId`, `passPredictionId`, and an optional `leadMinutes`; it verifies group membership, checks the pass belongs to that group subscription context, claims a pending delivery row, sends through Resend, then marks the row sent after Resend accepts the email.
+`POST /api/alerts/test` sends a simple Resend smoke-test email to `TEST_ALERT_EMAIL`. It requires `Authorization: Bearer ${CRON_SECRET}`, accepts no recipient from the request, and returns the Resend message id without exposing provider credentials.
+
+Test it locally with:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  http://localhost:3000/api/alerts/test
+```
 
 `GET /api/cron/alerts` is the scheduled alert worker. Vercel calls it every 15 minutes with `Authorization: Bearer ${CRON_SECRET}`. The worker reads cached `pass_predictions`, `group_subscriptions`, group membership, and `alert_preferences`; it does not call N2YO. Eligible future passes are selected by each user's lead-time window, sent through Resend, and deduped by `notification_deliveries`.
 

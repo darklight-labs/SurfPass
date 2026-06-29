@@ -24,6 +24,7 @@ const serverEnvSchema = publicEnvSchema.extend({
   RESEND_FROM_EMAIL: optionalNonEmptyString,
   ALERT_FROM_EMAIL: optionalNonEmptyString,
   CRON_SECRET: optionalNonEmptyString,
+  TEST_ALERT_EMAIL: optionalNonEmptyString,
 })
 
 const supabaseAdminEnvSchema = serverEnvSchema.extend({
@@ -126,6 +127,26 @@ export function getCronSecret(source: EnvSource = process.env) {
   }
 
   return cronSecret
+}
+
+export function getTestAlertEmail() {
+  const env = getServerEnv()
+
+  if (!env.TEST_ALERT_EMAIL) {
+    throw new EnvValidationError(
+      "TEST_ALERT_EMAIL is required for the manual test alert route."
+    )
+  }
+
+  const parsed = z.string().trim().email().safeParse(env.TEST_ALERT_EMAIL)
+
+  if (!parsed.success) {
+    throw new EnvValidationError(
+      "TEST_ALERT_EMAIL must be a valid email address."
+    )
+  }
+
+  return parsed.data
 }
 
 export function getN2yoEnv() {

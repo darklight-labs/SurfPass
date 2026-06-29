@@ -1,77 +1,102 @@
-import { revalidatePath } from "next/cache"
-import type { NextRequest } from "next/server"
-
-import { AlertDeliveryError, sendManualTestAlert } from "@/lib/alerts/deliveries"
-import { AlertEmailError } from "@/lib/alerts/email"
-import { getCurrentUser } from "@/lib/auth/guards"
-import { EnvValidationError } from "@/lib/env"
-import { manualAlertTestSchema } from "@/lib/validation/schemas"
+import { AlertEmailError, sendTestAlertEmail } from "@/lib/alerts/email"
+import {
+  EnvValidationError,
+  getCronSecret,
+  getTestAlertEmail,
+} from "@/lib/env"
 
 export const dynamic = "force-dynamic"
 
-function jsonError(message: string, status: number, code?: string) {
-  return Response.json({ error: message, code }, { status })
+function errorResponse(
+  message: string,
+  status: number,
+  code: string,
+  details?: Record<string, string>
+) {
+  return Response.json(
+    {
+      ok: false,
+      error: message,
+      code,
+      ...(details ? { details } : {}),
+    },
+    { status }
+  )
 }
 
-export async function POST(request: NextRequest) {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    return jsonError("Sign in to send a manual alert.", 401, "unauthorized")
+function serverErrorDetails(error: unknown) {
+  if (!(error instanceof Error)) {
+    return { name: "UnknownError", message: String(error) }
   }
 
-  if (!user.email) {
-    return jsonError(
-      "The signed-in user does not have an email address.",
-      422,
-      "missing_user_email"
-    )
+  return {
+    name: error.name,
+    message: error.message,
   }
+}
 
-  let body: unknown
+export async function POST(request: Request) {
+  let cronSecret: string
 
   try {
-    body = await request.json()
-  } catch {
-    return jsonError("Request body must be valid JSON.", 400, "invalid_json")
-  }
-
-  const parsed = manualAlertTestSchema.safeParse(body)
-
-  if (!parsed.success) {
-    return jsonError(
-      parsed.error.issues[0]?.message ?? "Manual alert request is invalid.",
-      400,
-      "invalid_request"
-    )
-  }
-
-  try {
-    const result = await sendManualTestAlert({
-      userId: user.id,
-      userEmail: user.email,
-      groupId: parsed.data.groupId,
-      passPredictionId: parsed.data.passPredictionId,
-      leadMinutes: parsed.data.leadMinutes,
+    cronSecret = getCronSecret()
+  } catch (error) {
+    console.error("[SurfPass test alert]", {
+      step: "authorization_configuration_failed",
+      error: serverErrorDetails(error),
     })
 
-    revalidatePath(`/groups/${parsed.data.groupId}`)
-    revalidatePath("/dashboard")
+    return errorResponse(
+      "Test alert authorization is not configured.",
+      503,
+      "cron_secret_missing"
+    )
+  }
 
-    return Response.json(result)
+  if (request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
+    return errorResponse(
+      "Unauthorized test alert request.",
+      401,
+      "unauthorized"
+    )
+  }
+
+  try {
+    const to = getTestAlertEmail()
+    const result = await sendTestAlertEmail(to)
+
+    return Response.json({
+      ok: true,
+      providerMessageId: result.providerMessageId,
+      to,
+    })
   } catch (error) {
-    if (error instanceof AlertDeliveryError) {
-      return jsonError(error.message, error.status, error.code)
+    console.error("[SurfPass test alert]", {
+      step: "send_failed",
+      error: serverErrorDetails(error),
+    })
+
+    if (error instanceof EnvValidationError) {
+      return errorResponse(
+        "Test alert email is not configured.",
+        503,
+        "alert_environment_missing"
+      )
     }
 
     if (error instanceof AlertEmailError) {
-      return jsonError(error.message, 503, "resend_send_failed")
+      return errorResponse(
+        "Resend could not send the test alert.",
+        502,
+        "resend_send_failed",
+        { provider: "resend" }
+      )
     }
 
-    if (error instanceof EnvValidationError) {
-      return jsonError(error.message, 503, "env_not_configured")
-    }
-
-    return jsonError("Manual alert send failed.", 503, "manual_alert_failed")
+    return errorResponse(
+      "Test alert email could not be sent.",
+      503,
+      "test_alert_failed"
+    )
   }
 }

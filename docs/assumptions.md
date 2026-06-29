@@ -78,13 +78,21 @@ Group subscriptions provide subscription-level alert intent through `alerts_enab
 
 Notification delivery records are the source of truth for sent alert state. Only rows with `status='sent'` are treated as delivered in pass cards. The unique key across user, group, pass prediction, channel, and lead time is modelled so repeated manual or cron runs can avoid duplicate sends.
 
-Manual test alerts are available through `POST /api/alerts/test`. The route requires an authenticated user, sends only to that user's Supabase Auth email address, verifies group membership, claims a pending delivery row, and marks it sent only after Resend accepts the email.
+Manual email smoke tests are available through `POST /api/alerts/test`. The
+route requires `Authorization: Bearer ${CRON_SECRET}`, sends only to the
+server-configured `TEST_ALERT_EMAIL`, and does not accept request-controlled
+recipient or alert content.
 
 Scheduled alerts run through `GET /api/cron/alerts`, protected by `Authorization: Bearer ${CRON_SECRET}` and configured in `vercel.json` for a 15 minute interval.
 
 The cron worker reads cached `pass_predictions` only. Pass refresh and alerting are separate responsibilities, so scheduled delivery does not spend N2YO transactions or hide stale provider data behind background fetches.
 
-The manual route and cron worker claim a `notification_deliveries` row with `status='pending'` before calling Resend, then mark it `sent` only after provider acceptance. Pass cards only treat `status='sent'` rows as delivered. The unique delivery key and Resend idempotency reduce duplicate-send risk under overlapping requests.
+The cron worker claims a `notification_deliveries` row with `status='pending'`
+before calling Resend, then marks it `sent` only after provider acceptance.
+Pass cards only treat `status='sent'` rows as delivered. The unique delivery
+key and Resend idempotency reduce duplicate-send risk under overlapping
+requests. The protected manual smoke-test route intentionally does not write
+delivery records.
 
 Scheduled alerts are batched into email digests by user, group, channel, and lead time. The digest may contain multiple pass windows, but `notification_deliveries` remains one row per user, group, pass, channel, and lead time.
 

@@ -85,3 +85,32 @@ export async function sendAlertDigestEmail({
     providerMessageId: result.data.id,
   }
 }
+
+export async function sendTestAlertEmail(
+  to: string
+): Promise<AlertEmailSendResult> {
+  const { resendApiKey, fromEmail } = getAlertEnv()
+  const resend = new Resend(resendApiKey)
+  const result = await resend.emails.send({
+    from: fromEmail,
+    to,
+    subject: "SurfPass test alert",
+    html: [
+      "<p><strong>SurfPass test alert</strong></p>",
+      "<p>Resend email delivery is configured correctly.</p>",
+    ].join(""),
+    text: "SurfPass test alert\n\nResend email delivery is configured correctly.",
+  })
+
+  if (result.error) {
+    throw new AlertEmailError(result.error.message)
+  }
+
+  if (!result.data?.id) {
+    throw new AlertEmailError("Resend accepted no message id.")
+  }
+
+  return {
+    providerMessageId: result.data.id,
+  }
+}
